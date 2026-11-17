@@ -1,11 +1,10 @@
 # Presence behavior and troubleshooting
 
-The build uses upstream Discord application ID `1370062110272520313` in
-`ContentView.swift`. Forking the source does not create a Discord application or
-give control over its portal settings. To use your own application, replace that
-ID and configure its Social SDK/iOS OAuth settings, then sign out before connecting
-to the new application. Do not carry credentials across client IDs. No application
-secret belongs in this iOS app.
+The current build uses your configured Discord application, with the public ID
+read from `.env`/build variables and baked into the bundle. The example value is
+`1572242579049808028`. Upstream ID `1370062110272520313` is no longer used as a
+fallback. Each account authorizes independently; see [account setup](ACCOUNTS.md).
+No client secret belongs in the app.
 
 ## Longer sessions
 
@@ -55,10 +54,9 @@ again, record those status lines, the session state, whether Music is playing, a
 whether Discord shows another activity. Do not share tokens or authorization codes.
 
 Stale catalog lookups and callbacks are invalidated by a presence generation number
-so they cannot submit an older update after a clear or a newer update. The polling
-caller also no longer clears presence again after a canceled SDK call: Stop already
-clears it, and that extra clear could affect a subsequently started session. These
-are correctness improvements; they are not proof of the reported startup cause.
+so they cannot submit an older update after a clear or a newer update. Each account
+has its own presence generation. Stop clears both account presences, while
+disconnect clears only that account. These are correctness improvements; they are not proof of the reported startup cause.
 
 ## Verification
 

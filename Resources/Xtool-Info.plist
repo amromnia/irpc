@@ -27,6 +27,21 @@
 			</array>
 		</dict>
 	</dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>discord-$(DISCORD_APPLICATION_ID)</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>discord</string>
+	</array>
+	<key>PresenceDiscordApplicationID</key>
+	<string>$(DISCORD_APPLICATION_ID)</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>processing</string>

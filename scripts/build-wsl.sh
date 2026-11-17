@@ -12,6 +12,7 @@ for argument in "$@"; do
     exit 1
   fi
 done
+python3 scripts/configure-app.py
 python3 scripts/prepare-xtool-resources.py
 mkdir -p build
 xtool dev build --scheme iRPC-Xtool --configuration release --ipa --verbose "$@" \

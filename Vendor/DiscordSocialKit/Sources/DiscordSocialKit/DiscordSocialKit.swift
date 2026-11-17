@@ -244,6 +244,7 @@ public final class DiscordManager: ObservableObject {
     public func signOut() throws {
         try requireStorage().delete()
         acceptsTokenUpdates = false
+        Discord_Client_AbortAuthorize(getClient())
         stopPresenceUpdates()
         Discord_Client_Disconnect(getClient())
         isAuthenticated = false
@@ -253,7 +254,17 @@ public final class DiscordManager: ObservableObject {
         globalName = nil
         avatarURL = nil
         cachedUserData = nil
+        userId = 0
     }
+
+    private static let callbackPump: Void = {
+        DispatchQueue.global(qos: .utility).async {
+            while true {
+                autoreleasepool { Discord_RunCallbacks() }
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+        }
+    }()
 
 	private func setupClient() {
 		print("🚀 Initializing Discord SDK...")
@@ -297,15 +308,8 @@ public final class DiscordManager: ObservableObject {
 		let userDataPtr = Unmanaged.passRetained(self).toOpaque()
 		Discord_Client_SetStatusChangedCallback(client, statusCallback, nil, userDataPtr)
 
-		// Start callback loop
-		DispatchQueue.global(qos: .utility).async { [weak self] in
-			while self != nil {
-				autoreleasepool {
-					Discord_RunCallbacks()
-				}
-				Thread.sleep(forTimeInterval: 0.01)
-			}
-		}
+        // RunCallbacks drains all clients. One serial pump serves both accounts.
+        _ = Self.callbackPump
 
 		print("✨ Discord SDK initialized successfully")
 	}
@@ -711,7 +715,12 @@ public final class DiscordManager: ObservableObject {
 				return
 			}
 
+            isAuthorizing = true
 			if token.needsRefresh {
+                guard let refresh = token.refreshToken, !refresh.isEmpty else {
+                    handleError("Saved sign-in has expired. Reconnect this account.")
+                    return
+                }
 				print("🔄 Token needs refresh, initiating refresh flow")
 				Task { await refreshTokenIfNeeded() }
 			} else {

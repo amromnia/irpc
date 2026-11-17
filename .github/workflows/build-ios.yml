@@ -19,6 +19,9 @@ jobs:
     timeout-minutes: 30
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DISCORD_APPLICATION_ID: ${{ vars.DISCORD_APPLICATION_ID }}
+      APP_DISPLAY_NAME: Afterglow
+      APP_BUNDLE_IDENTIFIER: com.amromnia.afterglow
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -26,6 +29,9 @@ jobs:
 
       - name: Check toolchain
         run: xcodebuild -version
+
+      - name: Configure public application identity
+        run: python3 scripts/configure-app.py
 
       - name: Build unsigned device app
         run: |
@@ -49,25 +55,25 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/Payload
-          ditto build/Build/Products/Release-iphoneos/iRPC.app dist/Payload/iRPC.app
-          /usr/libexec/PlistBuddy -c 'Print :BGTaskSchedulerPermittedIdentifiers:0' dist/Payload/iRPC.app/Info.plist
-          /usr/libexec/PlistBuddy -c 'Print :UIBackgroundModes:0' dist/Payload/iRPC.app/Info.plist
-          test -x dist/Payload/iRPC.app/iRPC
-          test ! -e dist/Payload/iRPC.app/embedded.mobileprovision
-          if codesign -dv dist/Payload/iRPC.app 2>/dev/null; then
+          ditto build/Build/Products/Release-iphoneos/Afterglow.app dist/Payload/Afterglow.app
+          /usr/libexec/PlistBuddy -c 'Print :BGTaskSchedulerPermittedIdentifiers:0' dist/Payload/Afterglow.app/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :UIBackgroundModes:0' dist/Payload/Afterglow.app/Info.plist
+          test -x dist/Payload/Afterglow.app/Afterglow
+          test ! -e dist/Payload/Afterglow.app/embedded.mobileprovision
+          if codesign -dv dist/Payload/Afterglow.app 2>/dev/null; then
             echo 'Expected an unsigned app but found a signature.' >&2
             exit 1
           fi
           cd dist
-          /usr/bin/zip -qry iRPC-unsigned.ipa Payload
-          unzip -t iRPC-unsigned.ipa
-          shasum -a 256 iRPC-unsigned.ipa > iRPC-unsigned.ipa.sha256
+          /usr/bin/zip -qry Afterglow-unsigned.ipa Payload
+          unzip -t Afterglow-unsigned.ipa
+          shasum -a 256 Afterglow-unsigned.ipa > Afterglow-unsigned.ipa.sha256
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: iRPC-unsigned
+          name: Afterglow-unsigned
           path: |
-            dist/iRPC-unsigned.ipa
-            dist/iRPC-unsigned.ipa.sha256
+            dist/Afterglow-unsigned.ipa
+            dist/Afterglow-unsigned.ipa.sha256
           if-no-files-found: error
           retention-days: 14

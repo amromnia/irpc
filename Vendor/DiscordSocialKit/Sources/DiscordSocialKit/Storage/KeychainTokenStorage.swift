@@ -7,13 +7,17 @@ import Security
 @MainActor
 public final class KeychainTokenStorage: TokenStorage {
     private let service: String
+    private let account: String
 
-    public init(service: String) { self.service = service }
+    public init(service: String, account: String = "discord-oauth") {
+        self.service = service
+        self.account = account
+    }
 
     private var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,
-         kSecAttrAccount as String: "discord-oauth"]
+         kSecAttrAccount as String: account]
     }
 
     public func load() throws -> DiscordToken? {

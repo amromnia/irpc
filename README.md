@@ -1,94 +1,125 @@
-# iRPC — Apple Music presence for Discord
+# Afterglow
 
-A SwiftUI iPhone/iPad app that shares Apple Music playback through DiscordSocialKit.
-Requires iOS 17.6 or later. Background sharing requires iOS 26 or later.
+A small native iPhone app for sharing your Apple Music soundtrack on up to two
+Discord accounts. Built with SwiftUI, with Liquid Glass controls on iOS 26,
+light/dark appearances, and a customizable accent color.
 
-For an entirely local Windows/WSL build using xtool 2.0, see
-[BUILD-WSL.md](docs/BUILD-WSL.md). It uses the existing Xcode project with a separate
-portable target and Keychain token storage; ordinary Xcode builds keep SwiftData.
+Afterglow is a fork of [itoolio/iRPC](https://github.com/itoolio/iRPC). Original
+project credits and Apache 2.0 licensing are retained below. The internal Xcode
+project/target names remain `iRPC` for build compatibility; the installed app and
+its interface use the configured Afterglow name.
 
-## Build an unsigned IPA on GitHub
+## Configure your own Discord application
 
-1. Push these files to your fork and enable GitHub Actions if prompted.
-2. Open **Actions → Build unsigned iOS IPA → Run workflow**, or push a branch.
-3. Download the **iRPC-unsigned** artifact from the completed run and unzip it.
-4. Sign `iRPC-unsigned.ipa` with your installation tool before installing it.
+Copy `.env.example` to `.env`, then set these **public** build values:
 
-No signing certificate, provisioning profile, Apple account, or repository secret is
-needed by CI. The workflow uses a device Release build and packages the app under
-`Payload/iRPC.app`; it does not run a signed archive export. The accompanying SHA-256
-file lets you check the downloaded IPA. Artifacts expire after 14 days.
+```dotenv
+DISCORD_APPLICATION_ID=1572242579049808028
+APP_DISPLAY_NAME=Afterglow
+APP_BUNDLE_IDENTIFIER=com.amromnia.afterglow
+```
 
-The workflow uses Xcode 26.3 on `macos-26` and the checked-in Swift package lockfile.
-If GitHub retires that Xcode installation, update `DEVELOPER_DIR` to an available
-Xcode 26+ installation. Dependency resolution intentionally fails rather than
-silently selecting unreviewed versions.
+The `.env` file and generated `Config/Local.xcconfig` are ignored by Git. An
+Application ID is public and will be visible inside the compiled app; this is
+configuration, not a way to hide a secret. Never put a client secret, bot token,
+or user token here. Environment variables override `.env` values.
 
-For local builds, open `iRPC.xcodeproj`, select the shared **iRPC** scheme, and set
-your signing team and bundle identifier. The inherited Discord application ID is
-still in `ContentView.swift`; use an application you control and configure its iOS
-OAuth settings before distributing your own version. Re-signing or changing the
-bundle identifier may require corresponding OAuth configuration. Apple Music
-catalog/history requests also need working MusicKit configuration for your signed
-app; an unsigned build cannot establish that those services will work.
+In the [Discord Developer Portal](https://discord.com/developers/applications),
+open this application, enable **Public Client** under OAuth2, and add:
 
-## Sharing
+```text
+discord-1572242579049808028:/authorize/callback
+```
 
-Authorize Music access, connect Discord, choose 30 minutes, 2 hours, or 4 hours,
-and tap **Start Sharing**. The default session length is 2 hours.
-On iOS 26+, a `BGContinuedProcessingTask` checks playback approximately every 15
-seconds and submits Discord presence updates. Pausing playback clears presence.
-The session ends after the selected number of polling intervals, or earlier on
-Stop, loss of authorization/connection, a processing error, system expiration,
-or cancellation through the system task UI. Actual duration includes request time.
-Each new session requires another tap in the foreground.
+The build script registers the corresponding iOS URL scheme. A different Discord
+application needs a matching redirect and fresh authorization. See
+[account setup and testing](docs/ACCOUNTS.md).
 
-This is an experiment with a finite listening session, not a promise of continuous
-background execution. iOS controls execution and may stop the task early. Closing
-the app from the app switcher terminates it without a cleanup callback, so Discord
-presence may remain visible until it expires or the connection is cleared.
-The system progress UI describes completed polling intervals, not acknowledged
-Discord deliveries. The app shows the last Discord acceptance time and whether an
-update is preparing, waiting for acknowledgement, or rejected. Acceptance does not
-prove another Discord client has rendered the activity.
+## Build locally on Windows/WSL
 
-The selected session length is an app setting, not a guaranteed iOS runtime.
-Sessions do not restart automatically from the background. The countdown predicts
-playback for up to 30 seconds between fresh player samples, then corrects to new
-observations. MusicKit artwork is used first; Discord still needs to fetch its URL.
-See [presence notes](docs/PRESENCE.md) for the inherited application ID and troubleshooting.
+From a native WSL filesystem checkout, with Swift 6.4.1, an extracted Xcode 27.1
+iOS SDK, xtool 2.0.0-beta.1, Python 3, and ImageMagick:
 
-On iOS 17.6–25, **Start Sharing While Open** uses the existing foreground updater
-and stops sharing when iRPC enters the background. Silent audio and notification
-keep-alives have been removed. Cloud sync is disabled. Standard Xcode builds store
-tokens in SwiftData; the xtool target uses device-local Keychain storage.
+```bash
+cp .env.example .env
+# Edit .env if desired.
+bash scripts/build-wsl.sh
+```
+
+The unsigned output is `xtool/Afterglow.ipa`. It still needs signing before
+installation. [BUILD-WSL.md](docs/BUILD-WSL.md) contains exact signing/install
+commands and build limitations. No cloud compilation or Mac is used by this path.
+
+For normal Xcode builds, run `python3 scripts/configure-app.py` after setting
+`.env`, open `iRPC.xcodeproj`, select the `iRPC` scheme, and configure your team.
+Xcode retains the native asset catalog and SwiftData storage path. The optional
+GitHub Actions workflow reads the `DISCORD_APPLICATION_ID` repository variable;
+it is not needed for local builds.
+
+## Use
+
+1. Allow Music access, then play something in Apple Music.
+2. Connect Account 1 with Discord. To connect Account 2, switch to that user in
+   Discord first; if a browser opens, sign into the second user there.
+3. Choose which accounts should receive your music. Select a session length and
+   tap **Start sharing**. Both selected, ready accounts receive the same Music
+   snapshot; a disconnected account doesn't stop the other.
+4. Tap an account to see its update acknowledgement, reconnect, or disconnect it.
+   Disconnecting removes only that slot's saved credentials and clears its presence.
+
+The app rejects connecting the same Discord user to both slots. Each slot has its
+own client and credential store, isolated by bundle ID, application ID, and slot.
+The WSL build stores tokens in Keychain; ordinary Xcode builds use separate
+SwiftData stores. Cloud synchronization is explicitly disabled in both paths.
+Rebranding changes the default bundle ID and using your own OAuth application
+requires fresh sign-in; old upstream credentials are not imported.
+
+The settings button opens accent/appearance controls. iOS 26 uses native Liquid
+Glass; older supported versions use material/standard controls. Reduce Transparency
+uses an opaque control surface. Minimum iOS is 17.6.
+
+## Background behavior and limitations
+
+On iOS 26+, sessions check Music approximately every 15 seconds, for a selected
+30 minutes, 2 hours, or 4 hours. The selected runtime is a finite app target, not
+an OS guarantee: iOS may stop the job early. Each new session starts from a
+foreground user action; there is no silent-audio fallback or automatic background
+renewal. Older iOS versions require keeping the app open.
+
+The countdown predicts for up to 30 seconds between fresh player observations and
+corrects on new samples/seeks. Artwork uses MusicKit's URL first; Discord still
+needs to fetch it. Discord acceptance is displayed per account and does not prove
+another client rendered the activity. Force-quitting may leave stale presence until
+Discord expires/clears it. See [presence notes](docs/PRESENCE.md).
 
 ## Verification
 
-CI compiles the real device app, checks that the background task keys are present,
-checks the app has no signing identity or provisioning profile, and validates the
-IPA ZIP. The xtool target has also compiled and produced a verified unsigned IPA
-locally in WSL. On-device behavior and the updated standard Xcode path remain
-unverified; see [the WSL build notes](docs/BUILD-WSL.md).
+A clean unsigned WSL build and bundle checks passed. Configuration parsing,
+credential namespace isolation, token serialization/expiry, and countdown/artwork
+regression checks are runnable with:
 
-After signing and installing on a physical iPhone:
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
+bash scripts/check-accounts.sh
+bash scripts/check-token-storage.sh
+bash scripts/check-presence.sh
+```
 
-1. Deny Music access and confirm sharing cannot start; then grant access and connect Discord.
-2. Start Music, tap Start, lock the phone, change tracks, and check the Discord
-   activity from another device. Allow one polling interval plus network latency.
-3. Pause and resume Music and confirm presence clears and returns.
-4. Test Stop and system UI cancellation; confirm the button resets and presence clears.
-5. Rapidly stop/restart a session and confirm only one session runs.
-6. Test network loss and restoration, system expiration, force quit, and a full
-   full selected session. Record actual background runtime and whether Music state
-   remains fresh; the API does not guarantee the selected runtime.
-7. On an older supported iOS version, confirm sharing stops after backgrounding.
+Live two-account OAuth, simultaneous Discord presence, long-session runtime, and
+visual/accessibility behavior need physical-device validation. Normal Xcode builds
+have not been run on macOS during this work. The inherited precompiled Discord SDK
+still has an unverified provenance question; see [fork notes](Vendor/DiscordSocialKit/FORK.md).
 
-See [the local fork notes](Vendor/DiscordSocialKit/FORK.md) for credential storage
-and the unresolved provenance question around the inherited Discord SDK binary.
+## Brand assets
+
+`Resources/Brand/AppIcon.svg` is the versioned vector source. Regenerate catalog
+icons with `python3 scripts/prepare-brand.py` on Linux/macOS with ImageMagick,
+then commit the resulting PNGs. The WSL resource script derives loose resources
+from that catalog. System SF Symbols are used for interface controls.
 
 ## License and credits
 
 Apache License 2.0; see [LICENSE](LICENSE). Forked from
 [itoolio/iRPC](https://github.com/itoolio/iRPC), with original credits to
 [@thehairy](https://github.com/thehairy) and [@castdrian](https://github.com/castdrian).
+Original source headers and the dependency's provenance notes remain in the repository.

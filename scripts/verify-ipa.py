@@ -30,10 +30,15 @@ def verify(path):
     with zipfile.ZipFile(path) as archive:
         assert archive.testzip() is None, "Corrupt IPA archive"
         names = archive.namelist()
+        assert not any(Path(name).name in (".env", ".env.example", "Local.xcconfig", "BuildIdentity.json") for name in names), "Local build configuration leaked into the app bundle"
         plist_name = next(n for n in names if n.startswith("Payload/") and n.count("/") == 2 and n.endswith("/Info.plist"))
         prefix = plist_name.removesuffix("Info.plist")
         info = plistlib.loads(archive.read(plist_name))
-        assert info["CFBundleIdentifier"] == "dev.adrian.ios.iRPC"
+        identity = json.loads((ROOT / "Config/BuildIdentity.json").read_text())
+        assert info["CFBundleIdentifier"] == identity["APP_BUNDLE_IDENTIFIER"]
+        assert info["CFBundleDisplayName"] == identity["APP_DISPLAY_NAME"]
+        assert info["PresenceDiscordApplicationID"] == identity["DISCORD_APPLICATION_ID"]
+        assert info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["discord-" + identity["DISCORD_APPLICATION_ID"]]
         assert info["MinimumOSVersion"] == "17.6"
         assert info["NSAppleMusicUsageDescription"]
         assert info["BGTaskSchedulerPermittedIdentifiers"] == [info["CFBundleIdentifier"] + ".presence"]

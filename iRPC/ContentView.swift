@@ -1,657 +1,270 @@
-//
-//  ContentView.swift
-//  iRPC
-//
-//  Created by Adrian Castro on 8/5/25.
-//
-
-import Combine
 import DiscordSocialKit
-import NowPlayingKit
-#if !IRPC_XTOOL
-import SwiftData
-#endif
-import SwiftUI
 import MusicKit
-import MusadoraKit
+import NowPlayingKit
+import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var store = PresenceStore()
     @ObservedObject private var background = BackgroundController.shared
-    @State private var sessionError: String?
     @AppStorage("presence.sessionMinutes") private var sessionMinutes = 120
+    @AppStorage("appearance.accent") private var accentHex = "E44950"
+    @AppStorage("appearance.mode") private var appearance = 0
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
-    @State private var nowPlaying = NowPlayingData(id: "", title: "Loading...", artist: "")
-    @State private var lastPlayed: Song?
-    @State private var isShowingLastPlayed = false
-    @State private var isAuthorized = false
-    @State private var isLoading = true
-    @State private var isAuthenticating = false
-    @State private var userEnabledRPC = false
-    @State private var showRPCToggle = false
-    @StateObject private var discord = DiscordManager(applicationId: 1_370_062_110_272_520_313)
-    private let manager = NowPlayingManager.shared
-    @State private var lastUpdateTime: TimeInterval = 0
-    private let updateInterval: TimeInterval = 1
-    #if !IRPC_XTOOL
-    @Environment(\.modelContext) private var modelContext
-    #endif
-    @State private var isMusicCurrentlyPlaying = false
-    @State private var toggleRefreshTrigger = UUID()
-    @State private var playbackSubscription: AnyCancellable?
-    @State private var onAppearExecuted = false
-    @State private var connectionCheckTimer: AnyCancellable?
-    @State private var forceConnectionRefresh = UUID()
+    @Environment(\.openURL) private var openURL
+    @State private var settingsOpen = false
+    @State private var selectedAccount: DiscordAccount?
 
-    // Direct state tracking to force UI updates
-    @State private var isDiscordAuthenticated = false
-    @State private var isDiscordReady = false
-    @State private var discordUsername: String? = nil
-    @State private var showDebugInfo = false  // Set to true to show debug info in UI
-
-    private var timer: Publishers.Autoconnect<Timer.TimerPublisher> {
-        Timer.publish(every: updateInterval, on: .main, in: .common).autoconnect()
-    }
-
-    enum ConnectionState: Equatable {
-        case connecting
-        case authenticating
-        case connected(username: String?)
-        case failed(error: String?)
-        case disconnected
-
-        static func == (lhs: ConnectionState, rhs: ConnectionState) -> Bool {
-            switch (lhs, rhs) {
-            case (.connecting, .connecting):
-                return true
-            case (.authenticating, .authenticating):
-                return true
-            case (.connected(let lhsUsername), .connected(let rhsUsername)):
-                return lhsUsername == rhsUsername
-            case (.failed(let lhsError), .failed(let rhsError)):
-                return lhsError == rhsError
-            case (.disconnected, .disconnected):
-                return true
-            default:
-                return false
-            }
-        }
-    }
-
-    private var connectionState: ConnectionState {
-        if discord.isAuthorizing || isAuthenticating || isLoading {
-            return .connecting
-        } else if isDiscordAuthenticated {  // Use our tracked state
-            if isDiscordReady {  // Use our tracked state
-                return .connected(username: discordUsername)
-            } else {
-                return .connecting
-            }
-        } else if let error = discord.errorMessage {
-            return .failed(error: error)
-        } else {
-            return .disconnected
-        }
-    }
-
-    private var shouldShowRPCToggle: Bool {
-        userEnabledRPC || (isAuthorized && discord.isAuthenticated && discord.isReady)
-    }
-
-    private var startButtonTitle: String {
-        if #available(iOS 26.0, *) { return "Start Sharing for \(sessionMinutes) Minutes" }
-        return "Start Sharing While Open"
-    }
+    private var accent: Color { Color(afterglowHex: accentHex) }
+    private var surface: Color { Color(uiColor: .secondarySystemGroupedBackground) }
+    private var durationLabel: String { sessionMinutes == 30 ? "30 min" : "\(sessionMinutes / 60) hours" }
 
     var body: some View {
         NavigationStack {
-            List {
-                if !isAuthorized {
-                    Section {
-                        AuthorizationView(requestAuthorization: requestAuthorization)
+            ScrollView {
+                VStack(spacing: 30) {
+                    header
+                    if !store.musicAuthorized { musicPermission }
+                    artwork
+                    songDetails
+                    if !store.playback.id.isEmpty { timeline }
+                    accountSection
+                    if let error = store.error {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(accent)
+                            Text(error).font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
+                            Button("Dismiss", systemImage: "xmark") { store.error = nil }
+                                .labelStyle(.iconOnly).font(.caption)
+                        }
+                        .padding(18).background(surface, in: RoundedRectangle(cornerRadius: 20))
                     }
-                } else {
-                    NowPlayingView(
-                        nowPlaying: nowPlaying,
-                        manager: manager,
-                        isLastPlayed: isShowingLastPlayed
-                    )
                 }
-
-                Section {
-                    VStack(spacing: 8) {
-                        HStack {
-                            discordImage
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 24, height: 24)
-
-                            ConnectionStatusView(
-                                isAuthenticated: isDiscordAuthenticated,
-                                isReady: isDiscordReady,
-                                username: discordUsername
-                            )
-
-                            Spacer()
-                        }
-
-                        // Debug info to show what's happening
-                        if showDebugInfo {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Auth: \(discord.isAuthenticated ? "✅" : "❌")")
-                                    Text("Ready: \(discord.isReady ? "✅" : "❌")")
-                                    Text("User: \(discord.username ?? "none")")
-                                }
-                                .font(.caption)
-                                .padding(6)
-                                .background(Color.gray.opacity(0.2))
-                                .cornerRadius(6)
-                                Spacer()
-                            }
-                        }
-                    }
-
-                    if let sessionError {
-                        Text(sessionError).foregroundStyle(.red)
-                    }
-                    if shouldShowRPCToggle {
-                        if #available(iOS 26.0, *) {
-                            Picker("Session length", selection: $sessionMinutes) {
-                                Text("30 minutes").tag(30)
-                                Text("2 hours").tag(120)
-                                Text("4 hours").tag(240)
-                            }
-                            .disabled(userEnabledRPC)
-                        }
-                        Button(userEnabledRPC ? "Stop Sharing" : startButtonTitle) {
-                            handleUserToggleRPC(enabled: !userEnabledRPC)
-                        }
-                        if #available(iOS 26.0, *) {
-                            Text(background.status).font(.caption).foregroundStyle(.secondary)
-                            if userEnabledRPC {
-                                Text(discord.presenceStatus).font(.caption).foregroundStyle(.secondary)
-                                if let acknowledged = discord.lastPresenceAcknowledgedAt {
-                                    Text("Last accepted: \(acknowledged.formatted(date: .omitted, time: .standard))")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        } else {
-                            Text("Sharing stops when iRPC enters the background. Background sharing requires iOS 26.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                } header: {
-                    Text("Discord Status")
-                } footer: {
-                    ConnectionFooterView(
-                        isAuthenticated: isDiscordAuthenticated,
-                        isReady: isDiscordReady,
-                        isPlaying: manager.isPlaying,
-                        showRPCToggle: shouldShowRPCToggle,
-                        userEnabledRPC: userEnabledRPC
-                    )
-                }
+                .padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 26)
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
             }
-            .listStyle(.insetGrouped)
-            .navigationTitle("iRPC")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        DiscordSettingsView(
-                            discord: discord,
-                            isAuthenticating: $isAuthenticating
-                        )
-                    } label: {
-                        Label("Discord Settings", systemImage: "gear")
-                    }
-                }
+            .background {
+                ZStack(alignment: .topLeading) {
+                    Color(uiColor: .systemGroupedBackground)
+                    Circle().fill(accent.opacity(colorScheme == .dark ? 0.16 : 0.09))
+                        .frame(width: 340, height: 340).blur(radius: 90)
+                        .offset(x: -130, y: -100)
+                }.ignoresSafeArea()
+            }
+            .safeAreaInset(edge: .bottom) { sharingDock }
+            .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $settingsOpen) { settings }
+            .sheet(item: $selectedAccount) { account in
+                AccountDetailsView(account: account, accent: accent,
+                                   authorizing: store.authorizing, connect: { store.connect(account) })
+            }
+        }
+        .tint(accent)
+        .preferredColorScheme(appearance == 0 ? nil : (appearance == 1 ? .light : .dark))
+        .task {
+            await store.start()
+            while !Task.isCancelled {
+                if !background.isRunning { await store.tick() }
+                do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            if #unavailable(iOS 26.0), phase == .background, userEnabledRPC {
-                handleUserToggleRPC(enabled: false)
+            if #unavailable(iOS 26.0), phase == .background { store.stopSharing() }
+            if phase == .active { Task { await store.refreshPlayback() } }
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            HStack(spacing: 11) {
+                AfterglowMark(color: accent).scaleEffect(0.75).frame(width: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(AppIdentity.name).font(.system(.title2, design: .rounded, weight: .bold))
+                    Text("One soundtrack. Every profile.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Button("Settings", systemImage: "slider.horizontal.3") { settingsOpen = true }
+                .labelStyle(.iconOnly).font(.system(size: 17, weight: .medium))
+                .frame(width: 44, height: 44)
+                .background(surface.opacity(0.8), in: Circle())
+        }
+    }
+
+    private var musicPermission: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("A little permission. A lot of music.", systemImage: "music.note")
+                .font(.headline)
+            Text("Allow Music access to share the song playing on your iPhone.")
+                .font(.subheadline).foregroundStyle(.secondary)
+            Button("Connect Apple Music") { Task { await store.requestMusicAccess() } }
+                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                Button("Open Settings") { openURL(url) }.font(.footnote)
             }
         }
-        .onChange(of: discord.isAuthenticated) { _, authenticated in
-            if !authenticated && userEnabledRPC { handleUserToggleRPC(enabled: false) }
-        }
-        .onChange(of: manager.isPlaying) { _, newValue in
-            print("🎵 Music playing state changed: \(newValue)")
-            DispatchQueue.main.async {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showRPCToggle = shouldShowRPCToggle
-                }
+        .padding(22).frame(maxWidth: .infinity, alignment: .leading)
+        .background(surface, in: RoundedRectangle(cornerRadius: 26))
+    }
 
-                if newValue {
-                    print("▶️ Music started playing - updating UI and Discord")
-                    if userEnabledRPC && discord.isAuthenticated && discord.isReady {
-                        Task { await updateDiscordWithCurrentSong() }
-                    }
+    private var artwork: some View {
+        ZStack(alignment: .bottomLeading) {
+            AsyncImage(url: store.playback.artworkURL) { phase in
+                if case .success(let image) = phase {
+                    image.resizable().scaledToFill()
                 } else {
-                    print("⏸️ Music stopped playing")
-                    if userEnabledRPC && discord.isAuthenticated {
-                        print("🛑 Clearing Discord presence")
-                        discord.clearPlayback()
+                    ZStack {
+                        LinearGradient(colors: [accent.opacity(0.8), accent.opacity(0.3), Color(uiColor: .systemBackground)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                        AfterglowMark().scaleEffect(2.7)
                     }
                 }
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: SystemMusicPlayer.playbackStateDidChangeNotification)) { _ in
-            print("🎵📣 System Music Player state changed!")
-            handleMusicPlaybackStateChange()
-        }
-        .task(id: "initializeMusic") {
-            if isAuthorized {
-                // Immediately try to show music content regardless of Discord status
-                print("🎵 Initializing music display")
-                await updateNowPlaying(forceRefresh: true)
+            .frame(width: 270, height: 270).clipped()
+            HStack(spacing: 7) {
+                Circle().fill(store.playing ? Color.green : Color.white.opacity(0.6)).frame(width: 6, height: 6)
+                Text(store.playing ? "NOW PLAYING" : (store.playback.id.isEmpty ? "READY WHEN YOU ARE" : (store.recentPlayback ? "RECENTLY PLAYED" : "PAUSED")))
+                    .font(.system(size: 9, weight: .bold)).tracking(1.6)
             }
+            .foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 9)
+            .background(.black.opacity(0.55), in: Capsule()).padding(16)
         }
-        .task(priority: .high) {
-            isLoading = true
-            await MainActor.run {
-                #if IRPC_XTOOL
-                discord.setTokenStorage(KeychainTokenStorage(service: Bundle.main.bundleIdentifier! + ".discord"))
-                #else
-                discord.setModelContext(modelContext)
-                #endif
-            }
+        .clipShape(RoundedRectangle(cornerRadius: 30))
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.13), radius: 24, y: 14)
+        .padding(.top, 8)
+        .accessibilityLabel(store.playing ? "Now playing artwork" : "Music artwork")
+    }
 
-            let hasExistingToken = await checkExistingToken()
-            if hasExistingToken {
-                isAuthenticating = true
-                await discord.setupWithExistingToken()
-            }
-            isLoading = false
-        }
-        .task {
-            await requestAuthorization()
-            if isAuthorized {
-                print("🎵 Music access authorized")
-                await updateNowPlaying(forceRefresh: true)
-            }
-            isLoading = false
-        }
-        .onReceive(timer) { _ in
-            guard isAuthorized, !background.isRunning else { return }
-            Task {
-                await updatePlaybackTime()
+    private var songDetails: some View {
+        VStack(spacing: 8) {
+            Text(store.playback.title).font(.system(.title2, design: .rounded, weight: .bold))
+                .multilineTextAlignment(.center).lineLimit(2)
+            Text(store.playback.artist.isEmpty ? "Play something you love in Apple Music." : store.playback.artist)
+                .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            if let album = store.playback.album {
+                Text(album).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
             }
         }
-        .onAppear {
-            if !onAppearExecuted {
-                onAppearExecuted = true
-                DispatchQueue.main.async {
-                    let isPlaying = manager.isPlaying
-                    print("📱 Initial music state: \(isPlaying)")
+    }
 
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        showRPCToggle = discord.isAuthenticated &&
-                                        discord.isReady &&
-                                        (isPlaying || userEnabledRPC)
+    private var timeline: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let duration = store.playback.duration.isFinite ? max(1, store.playback.duration) : 1
+            let reported = store.playback.playbackTime.isFinite ? max(0, store.playback.playbackTime) : 0
+            let elapsed = store.playing ? min(30, max(0, context.date.timeIntervalSince(store.observedAt))) : 0
+            let position = min(duration, reported + elapsed)
+            VStack(spacing: 9) {
+                ProgressView(value: position, total: duration).tint(accent)
+                HStack {
+                    Text(time(position))
+                    Spacer()
+                    Button("Open Music", systemImage: "arrow.up.right") {
+                        if let url = URL(string: "music://") { openURL(url) }
                     }
-
-                    setupMusicStatusObservers()
-                    setupConnectionMonitoring()
+                    .font(.caption2).foregroundStyle(.secondary)
+                    Spacer()
+                    Text("−" + time(duration - position))
                 }
+                .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
             }
-            handleMusicPlaybackStateChange()
-        }
-        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-            updateTrackedDiscordState()
+            .padding(.horizontal, 16)
         }
     }
-    
-    private func setupMusicStatusObservers() {
-        // Cancel any existing subscription
-        playbackSubscription?.cancel()
 
-        playbackSubscription = manager.playbackStatePublisher
-            .receive(on: RunLoop.main)
-            .sink { isPlaying in
-                print("🎹 Playback state publisher update: \(isPlaying)")
-                self.isMusicCurrentlyPlaying = isPlaying
-                self.handleMusicPlaybackStateChange()
+    private var accountSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("YOUR ACCOUNTS").font(.system(size: 10, weight: .bold)).tracking(2).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(store.readyAccounts.count) ready").font(.caption2).foregroundStyle(.secondary)
             }
-
-        print("🎧 Music status observers setup complete")
+            ForEach(store.accounts) { account in
+                AccountRow(account: account, accent: accent, disabled: store.authorizing, musicPlaying: store.playing,
+                           details: { selectedAccount = account }, connect: { store.connect(account) })
+            }
+            Text("One song, both profiles. Connect each Discord account separately.")
+                .font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 3)
+        }
     }
 
-    private func setupConnectionMonitoring() {
-        // Cancel any existing timer
-        connectionCheckTimer?.cancel()
-        
-        connectionCheckTimer = Timer.publish(every: 0.5, on: .main, in: .common)
-            .autoconnect()
-            .sink { _ in
-                // Always force refresh the connection state to ensure UI stays in sync
-                self.updateTrackedDiscordState()
-                
-                let shouldShow = self.shouldShowRPCToggle
-                if self.showRPCToggle != shouldShow {
-                    DispatchQueue.main.async {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            self.showRPCToggle = shouldShow
+    private var sharingDock: some View {
+        VStack(spacing: 13) {
+            HStack {
+                HStack(spacing: 7) {
+                    Circle().fill(store.sharing ? Color.green : Color.secondary.opacity(0.5)).frame(width: 6, height: 6)
+                    Text(store.sharing ? "Sharing your soundtrack" : "Your soundtrack, shared.")
+                        .font(.caption).fontWeight(.medium)
+                }
+                Spacer(minLength: 8)
+                if #available(iOS 26.0, *) {
+                    Menu {
+                        Picker("Session length", selection: $sessionMinutes) {
+                            Text("30 minutes").tag(30)
+                            Text("2 hours").tag(120)
+                            Text("4 hours").tag(240)
                         }
-                    }
+                    } label: {
+                        Label(durationLabel, systemImage: "clock").font(.caption)
+                    }.disabled(store.sharing)
                 }
             }
-            
-        print("🔌 Discord connection monitoring started")
+            SharingButton(sharing: store.sharing,
+                          disabled: !store.sharing && (!store.musicAuthorized || store.readyAccounts.isEmpty)) {
+                store.toggleSharing(minutes: sessionMinutes)
+            }
+            Text(sharingHint)
+                .font(.system(size: 10)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+        .padding(20).modifier(AfterglowGlass())
+        .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 8)
+        .frame(maxWidth: 560)
     }
 
-    private func updateTrackedDiscordState() {
-        // Directly update our state variables from Discord
-        let authenticated = discord.isAuthenticated
-        let ready = discord.isReady
-        let username = discord.username
-        
-        // Only update UI if values have changed
-        if isDiscordAuthenticated != authenticated || 
-           isDiscordReady != ready ||
-           discordUsername != username {
-            
-            print("🔄 Discord state changed: Auth=\(authenticated) Ready=\(ready) User=\(username ?? "none")")
-            
-            // Update our tracked state
-            isDiscordAuthenticated = authenticated
-            isDiscordReady = ready
-            discordUsername = username
-            
-            // Force UI refresh
-            forceConnectionRefresh = UUID()
-        }
+    private var sharingHint: String {
+        if #unavailable(iOS 26.0) { return "Keep \(AppIdentity.name) open while sharing on this iOS version." }
+        return store.sharing ? "iOS may end this session early." : "Choose which profiles receive your music."
     }
 
-    private func handleMusicPlaybackStateChange() {
-        let isCurrentlyPlaying = manager.isPlaying
-
-        print("🎮 Handling music state change: \(isCurrentlyPlaying ? "playing" : "paused")")
-
-        DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                let shouldShow = self.discord.isAuthenticated &&
-                                self.discord.isReady &&
-                                (isCurrentlyPlaying || self.userEnabledRPC)
-
-                self.showRPCToggle = shouldShow
-                self.toggleRefreshTrigger = UUID()
-            }
-
-            if isCurrentlyPlaying {
-                if self.userEnabledRPC && self.discord.isAuthenticated && self.discord.isReady {
-                    Task { await self.updateDiscordWithCurrentSong() }
-                }
-            } else {
-                if self.userEnabledRPC && self.discord.isAuthenticated {
-                    self.discord.clearPlayback()
-                }
-            }
-
-            Task { await self.updateNowPlaying() }
-        }
-    }
-
-    private func updateToggleVisibility() {
-        let shouldShow = shouldShowRPCToggle
-        if showRPCToggle != shouldShow {
-            DispatchQueue.main.async {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    self.showRPCToggle = shouldShow
-                }
-            }
-        }
-    }
-
-    private func forceShowToggle() {
-        guard discord.isAuthenticated && discord.isReady else {
-            print("⚠️ Cannot show toggle - Discord not ready/authenticated")
-            return
-        }
-
-        DispatchQueue.main.async {
-            withAnimation(.easeInOut) {
-                self.showRPCToggle = true
-                print("🎯 Forcing toggle visibility to true")
-            }
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(.easeInOut) {
-                    self.showRPCToggle = true
-                }
-            }
-        }
-    }
-
-    private func checkMusicPlaybackState() {
-        let isPlaying = manager.isPlaying
-
-        print("🔎 Checking music state: \(isPlaying ? "playing" : "not playing")")
-
-        let shouldShow = discord.isAuthenticated && discord.isReady && (isPlaying || userEnabledRPC)
-
-        DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                self.showRPCToggle = shouldShow
-
-                if isPlaying && shouldShow && self.userEnabledRPC {
-                    Task { await self.updateDiscordWithCurrentSong() }
-                }
-            }
-        }
-    }
-
-    private func updateNowPlaying(forceRefresh: Bool = false) async {
-        // Skip if we're not authorized yet
-        guard isAuthorized else {
-            print("⚠️ Music not authorized yet, skipping updateNowPlaying")
-            return
-        }
-        
-        // Check if music is playing first
-        if !manager.isPlaying {
-            // Not playing, so attempt to show the last played song
-            do {
-                let recentSongs = try await MHistory.recentlyPlayedSongs(limit: 1)
-                if let lastSong = recentSongs.first {
-                    await MainActor.run {
-                        print("🎵 No active playback, showing last played: \(lastSong.title)")
-                        lastPlayed = lastSong
-                        isShowingLastPlayed = true
-                        
-                        // Update nowPlaying with last played info
-                        nowPlaying = NowPlayingData(
-                            id: lastSong.id.rawValue,
-                            title: lastSong.title,
-                            artist: lastSong.artistName,
-                            album: lastSong.albumTitle,
-                            artworkURL: lastSong.artwork?.url(width: 300, height: 300),
-                            playbackTime: 0,
-                            duration: lastSong.duration ?? 0
-                        )
-                        
-                        // Only update Discord presence if specifically enabled
-                        if userEnabledRPC && discord.isAuthenticated && discord.isReady {
-                            // Add a small delay to ensure Discord is ready
-                            if forceRefresh {
-                                Task {
-                                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-                                    discord.clearPlayback()
-                                }
-                            } else {
-                                discord.clearPlayback()
+    private var settings: some View {
+        NavigationStack {
+            Form {
+                Section("Make it yours") {
+                    ColorPicker("Accent color", selection: Binding(get: { accent }, set: { accentHex = $0.afterglowHex }), supportsOpacity: false)
+                    HStack(spacing: 18) {
+                        ForEach(["E44950", "B56BDB", "468EE5", "258976"], id: \.self) { color in
+                            Button { accentHex = color } label: {
+                                Circle().fill(Color(afterglowHex: color)).frame(width: 28, height: 28)
+                                    .overlay(Circle().strokeBorder(.primary.opacity(accentHex == color ? 0.8 : 0), lineWidth: 2))
                             }
+                            .buttonStyle(.plain).accessibilityLabel("Choose accent \(color)")
                         }
+                    }.padding(.vertical, 5)
+                    Picker("Appearance", selection: $appearance) {
+                        Text("System").tag(0); Text("Light").tag(1); Text("Dark").tag(2)
                     }
-                } else {
-                    await showNoSongPlaying()
                 }
-            } catch {
-                print("⚠️ Failed to get recently played: \(error.localizedDescription)")
-                await showNoSongPlaying()
-            }
-            return
-        }
-        
-        // Music is actively playing, get current playback
-        do {
-            let newPlayback = try await manager.getCurrentPlayback()
-            await MainActor.run {
-                isShowingLastPlayed = false
-                nowPlaying = newPlayback
-                print("🎵 Now Playing updated: \(newPlayback.title)")
-
-                // Only update Discord if specifically enabled
-                if userEnabledRPC && discord.isAuthenticated && discord.isReady {
-                    updateDiscordDirectly(with: newPlayback)
+                Section("Sharing session") {
+                    Text(background.status).font(.footnote)
+                    if #unavailable(iOS 26.0) {
+                        Text("On this iOS version, keep \(AppIdentity.name) open while sharing.")
+                    }
                 }
-
-                // Always update toggle visibility based on current state
-                updateToggleVisibility()
-            }
-        } catch {
-            print("⚠️ Error getting now playing: \(error.localizedDescription)")
-            await showNoSongPlaying()
-        }
-    }
-    
-    private func showNoSongPlaying() async {
-        await MainActor.run {
-            isShowingLastPlayed = false
-            nowPlaying = NowPlayingData(id: "", title: "No song playing", artist: "")
-            
-            if userEnabledRPC && discord.isAuthenticated {
-                discord.clearPlayback()
-            }
-        }
-    }
-
-    private func updateDiscordDirectly(with playback: NowPlayingData) {
-        guard userEnabledRPC, !Task.isCancelled else { return }
-        discord.updateCurrentPlayback(
-            id: playback.id,
-            title: playback.title,
-            artist: playback.artist,
-            duration: playback.duration,
-            currentTime: playback.playbackTime,
-            artworkURL: playback.artworkURL
-        )
-    }
-
-    private func updatePlaybackTime() async {
-        do {
-            let current = try await manager.getCurrentPlayback()
-            await MainActor.run {
-                nowPlaying = current
-
-                if userEnabledRPC && discord.isAuthenticated && discord.isReady && manager.isPlaying {
-                    updateDiscordDirectly(with: current)
+                Section("About") {
+                    LabeledContent("App", value: AppIdentity.name)
+                    LabeledContent("Discord application", value: String(AppIdentity.applicationID))
+                        .font(.caption).textSelection(.enabled)
+                    Text("Built on open-source foundations. Original project and license details are in the repository README.")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-        } catch {
+            .navigationTitle("Your space")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { settingsOpen = false } } }
         }
     }
 
-    private func updateDiscordWithCurrentSong() async {
-        do {
-            guard manager.isPlaying else {
-                print("⚠️ Not updating Discord - music not playing")
-                return
-            }
-
-            let current = try await manager.getCurrentPlayback()
-            await MainActor.run {
-                print("🎮 Updating Discord with: \(current.title)")
-                updateDiscordDirectly(with: current)
-            }
-        } catch {
-            print("⚠️ Failed to update Discord: \(error.localizedDescription)")
-        }
-    }
-
-    private func handleUserToggleRPC(enabled: Bool) {
-        sessionError = nil
-        if enabled {
-            userEnabledRPC = true
-            if #unavailable(iOS 26.0) {
-                discord.startPresenceUpdates()
-                return
-            }
-            discord.isRunning = true
-            do {
-                try background.start(minutes: sessionMinutes, update: pollPresence, onStop: {
-                    userEnabledRPC = false
-                    discord.stopPresenceUpdates()
-                })
-            } catch {
-                userEnabledRPC = false
-                discord.stopPresenceUpdates()
-                sessionError = error.localizedDescription
-            }
-        } else {
-            userEnabledRPC = false
-            background.stop()
-            discord.stopPresenceUpdates()
-        }
-    }
-
-    @MainActor
-    private func pollPresence() async throws {
-        try Task.checkCancellation()
-        guard userEnabledRPC else { throw CancellationError() }
-        guard isAuthorized, discord.isAuthenticated, discord.isReady else {
-            throw NSError(domain: "iRPC", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "Music access or the Discord connection is unavailable."
-            ])
-        }
-        // Read the player directly: the wrapper's published state can lag notifications.
-        guard SystemMusicPlayer.shared.state.playbackStatus == .playing else {
-            discord.clearPlayback()
-            return
-        }
-        do {
-            let current = try await manager.getCurrentPlayback()
-            try Task.checkCancellation()
-            guard userEnabledRPC else { throw CancellationError() }
-            nowPlaying = current
-            isShowingLastPlayed = false
-            await discord.updateRichPresence(
-                id: current.id, title: current.title, artist: current.artist,
-                duration: current.duration, currentTime: current.playbackTime,
-                artworkURL: current.artworkURL
-            )
-        } catch NowPlayingError.noCurrentEntry {
-            discord.clearPlayback()
-        }
-    }
-
-    private func requestAuthorization() async {
-        let status = await manager.authorize()
-        isAuthorized = status == .authorized
-    }
-
-    private func checkExistingToken() async -> Bool {
-        do { return try discord.hasStoredToken() }
-        catch {
-            sessionError = "Unable to read Discord credentials. Check device storage access."
-            return false
-        }
-    }
-
-    private var discordImage: Image {
-        #if IRPC_XTOOL
-        return Image("Discord").renderingMode(.template)
-        #else
-        return Image("Discord")
-        #endif
-    }
-
-}
-
-extension View {
-    fileprivate func formatTime(_ time: TimeInterval) -> String {
-        let minutes = Int(time) / 60
-        let seconds = Int(time) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+    private func time(_ value: TimeInterval) -> String {
+        let seconds = Int(max(0, value))
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }

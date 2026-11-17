@@ -1,6 +1,6 @@
 import Foundation
 
-/// One account per installation. Saving replaces the previous credentials atomically.
+/// One account per store. Saving replaces that store's previous credentials atomically.
 /// Storage errors must reach the caller; an unreadable store is not an empty store.
 @MainActor
 public protocol TokenStorage {

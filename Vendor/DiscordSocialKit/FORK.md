@@ -38,3 +38,13 @@ Unmodified SDK executable SHA-256 values:
 
 These identify the inherited binaries; they do not verify provenance against an
 official Discord distribution. Original upstream source headers are retained.
+
+## Two-account integration
+
+The app now creates two clients, each with a `DiscordCredentialScope` identified by
+application ID and slot. Keychain uses separate account attributes within a service
+that includes the bundle/client ID; normal Xcode uses separate named SwiftData stores.
+Each save/delete affects only that slot. `Discord_RunCallbacks` runs from one shared
+serial pump for all clients, rather than concurrently from one loop per manager.
+Changing the application ID never imports the previous client's tokens. The two-client
+source path compiles; simultaneous live account authorization still needs device tests.

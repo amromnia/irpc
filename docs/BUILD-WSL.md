@@ -1,4 +1,4 @@
-# Local Windows/WSL build
+# Local Afterglow Windows/WSL build
 
 Verified November 17, 2026 on Windows 11 + WSL2 Ubuntu with Swift 6.4.1,
 Xcode 27.1's extracted Darwin/iOS SDK, and xtool 2.0.0-beta.1. All compilation,
@@ -14,6 +14,9 @@ Use a checkout on WSL's native filesystem. Do not use the experimental
 cd ~/ios-projects/irpc
 # Apply/pull this fork's committed changes first; preserve any local experiments.
 sudo apt install imagemagick python3
+cp .env.example .env
+# Set public application values if needed.
+python3 scripts/configure-app.py
 bash scripts/check-token-storage.sh
 bash scripts/build-wsl.sh
 ```
@@ -24,9 +27,9 @@ The build script generates loose resources, exports `IRPC_XTOOL=1`, and runs:
 xtool dev build --scheme iRPC-Xtool --configuration release --ipa --verbose
 ```
 
-Output: `xtool/iRPC-Xtool.ipa`. Full log: `build/xtool-build.log`.
+Output: `xtool/Afterglow.ipa`. Full log: `build/xtool-build.log`.
 The script finishes by checking the IPA structure, icon bytes, Discord PNG,
-bundle identifier (`dev.adrian.ios.iRPC`), minimum iOS (`17.6`), Music usage
+configured bundle identifier (default `com.amromnia.afterglow`), minimum iOS (`17.6`), Music usage
 description, background task settings, linked libraries, embedded Discord
 framework, and absence of an app code signature/provisioning profile/SwiftData
 link/catalog JSON files. The SDK framework's inherited signature is not treated
@@ -35,7 +38,7 @@ as an app signature; your signer must re-sign embedded frameworks too.
 The implementation was tested in `/home/amr/ios-projects/irpc-xtool-build`, an
 isolated native Linux copy of this fork's working source. The pre-existing WSL
 checkout and its experiments were preserved. The unsigned artifact was also
-copied to the Windows checkout's ignored `build/iRPC-Xtool-unsigned.ipa`.
+copied to the Windows checkout's ignored `build/Afterglow-unsigned.ipa`.
 
 ## Compatibility inventory
 
@@ -47,7 +50,7 @@ copied to the Windows checkout's ignored `build/iRPC-Xtool-unsigned.ipa`.
 | Discord custom symbol | Original `.symbolset` | Regular-M glyph extracted from the same SVG sheet and rasterized as a template PNG |
 | AccentColor | Empty color entry; platform default | Same platform default |
 | SF Symbols, artwork, avatar images | System symbols / AsyncImage | Same |
-| Token storage | SwiftData via `TokenStorage` | Keychain via `TokenStorage`, explicit compile flag |
+| Token storage | Isolated per-account SwiftData via `TokenStorage` | Isolated per-account Keychain via `TokenStorage`, explicit compile flag |
 | CloudKit | Already explicitly disabled | No cloud sync; device-only Keychain item |
 | SwiftData macros | Original model retained | Entire model/export/consumer paths excluded |
 | Build mode | Standard Xcode Debug/Release | Separate target/scheme, Debug/Release with `IRPC_XTOOL` |
@@ -92,7 +95,7 @@ added. The IPA verifier detects missing expected icon files.
 ## Persistence and migration
 
 The networking implementation has no knowledge of database queries. It calls
-`TokenStorage.load/save/delete`; saving replaces the single account credentials.
+`TokenStorage.load/save/delete`; saving replaces only that account slot’s credentials. Two clients share one SDK callback pump.
 The SwiftData adapter keeps the existing model schema and rolls back failed
 writes. The Keychain adapter updates an existing item atomically or inserts a new
 one, distinguishes a missing item from storage failure, and rejects corrupt data.
@@ -126,7 +129,7 @@ the underlying command directly so the unsigned verification step is not applied
 
 ```bash
 IRPC_XTOOL=1 xtool dev build --scheme iRPC-Xtool --configuration release --ipa --sign
-xtool install --usb xtool/iRPC-Xtool.ipa
+xtool install --usb xtool/Afterglow.ipa
 xtool launch --help
 ```
 
@@ -158,3 +161,20 @@ auto-linked SDK frameworks. The actual link succeeds using real SDK libraries;
 no private framework or stub was added. The inherited Discord SDK binary remains
 a provenance trust question from the earlier review. Normal Xcode builds retain
 their storage/catalog path but have not been run on macOS during this work.
+
+## Public configuration and rebranding
+
+`Config/App.xcconfig` is shared by the two application targets. The configuration
+script validates allowlisted values from `.env` or environment variables and writes
+ignored `Config/Local.xcconfig`/`Config/BuildIdentity.json`. Both app plists include
+the selected Discord client ID and URL scheme. The verifier compares the actual
+bundle against those generated public values. No `.env` file or token is packaged.
+
+The installed display/product name is Afterglow and the default bundle identifier
+is now `com.amromnia.afterglow`. Internal project/target names remain stable. This
+is a new app identity relative to the old IPA and needs a matching signing profile
+and fresh Discord/Music authorization. The old app's credentials are not copied.
+
+The initial redesigned app was also built from a clean native WSL copy at
+`/home/amr/ios-projects/afterglow-verify`. iOS 26 glass APIs compile through xtool.
+Two-account OAuth/live presence and visual behavior remain device tests.

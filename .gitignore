@@ -1,4 +1,8 @@
 # General
+__pycache__/
+.env
+Config/Local.xcconfig
+Config/BuildIdentity.json
 build/
 xtool/
 .bsp/

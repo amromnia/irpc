@@ -50,7 +50,7 @@ final class BackgroundController: ObservableObject {
         self.onStop = onStop
         let request = BGContinuedProcessingTaskRequest(
             identifier: identifier,
-            title: "Share Apple Music with Discord",
+            title: "Share your soundtrack",
             subtitle: "\(minutes)-minute listening session"
         )
         request.strategy = .fail
@@ -123,7 +123,7 @@ final class BackgroundController: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .unavailable: return "Background sharing requires iOS 26 or later."
-            case .notReady: return "Open iRPC in the foreground to start sharing."
+            case .notReady: return "Open the app to start sharing."
             }
         }
     }

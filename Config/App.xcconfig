@@ -1,0 +1,6 @@
+// Defaults for a source checkout. Run scripts/configure-app.py before building.
+APP_DISPLAY_NAME = Afterglow
+APP_PRODUCT_NAME = Afterglow
+APP_BUNDLE_IDENTIFIER = com.amromnia.afterglow
+DISCORD_APPLICATION_ID = 0
+#include? "Local.xcconfig"
