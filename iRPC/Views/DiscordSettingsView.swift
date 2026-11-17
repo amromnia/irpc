@@ -15,6 +15,7 @@ public struct DiscordSettingsView: View {
     let discord: DiscordManager
     @Binding var isAuthenticating: Bool
     
+    @State private var storageError: String?
     @StateObject private var viewModel: DiscordSettingsViewModel
     
     private var isShowingUserProfile: Bool {
@@ -65,6 +66,11 @@ public struct DiscordSettingsView: View {
             if canShowReconnectButton {
                 Section {
                     ReconnectButton(action: initiateAuthentication)
+                    Button("Sign Out", role: .destructive) {
+                        do { try discord.signOut() }
+                        catch { storageError = "Unable to remove saved Discord credentials." }
+                    }
+                    if let storageError { Text(storageError).foregroundStyle(.red) }
                 } footer: {
                     Text("Use this if you're having connection issues.")
                 }

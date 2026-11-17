@@ -10,7 +10,28 @@
 		3A4B2FD22DCE6FDF006DFDDA /* MusadoraKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3A4B2FD12DCE6FDF006DFDDA /* MusadoraKit */; };
 		3AC1BE732DD278C500CF3D2C /* NowPlayingKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3AC1BE722DD278C500CF3D2C /* NowPlayingKit */; };
 		3AD92A7E2DD39FD100CCE9E4 /* DiscordSocialKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3AD92A7D2DD39FD100CCE9E4 /* DiscordSocialKit */; };
-		F480CA2F2DDB9A39002493DD /* ScrobbleKit in Frameworks */ = {isa = PBXBuildFile; productRef = F480CA2E2DDB9A39002493DD /* ScrobbleKit */; };
+        C20000000000000000000000 /* AppIcon-20@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000000 /* AppIcon-20@2x.png */; };
+        C20000000000000000000001 /* AppIcon-20@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000001 /* AppIcon-20@3x.png */; };
+        C20000000000000000000002 /* AppIcon-29.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000002 /* AppIcon-29.png */; };
+        C20000000000000000000003 /* AppIcon-29@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000003 /* AppIcon-29@2x.png */; };
+        C20000000000000000000004 /* AppIcon-29@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000004 /* AppIcon-29@3x.png */; };
+        C20000000000000000000005 /* AppIcon-40@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000005 /* AppIcon-40@2x.png */; };
+        C20000000000000000000006 /* AppIcon-40@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000006 /* AppIcon-40@3x.png */; };
+        C20000000000000000000007 /* AppIcon@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000007 /* AppIcon@2x.png */; };
+        C20000000000000000000008 /* AppIcon@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000008 /* AppIcon@3x.png */; };
+        C20000000000000000000009 /* AppIcon-20~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000009 /* AppIcon-20~ipad.png */; };
+        C2000000000000000000000A /* AppIcon-20@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = C1000000000000000000000A /* AppIcon-20@2x~ipad.png */; };
+        C2000000000000000000000B /* AppIcon-29~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = C1000000000000000000000B /* AppIcon-29~ipad.png */; };
+        C2000000000000000000000C /* AppIcon-29@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = C1000000000000000000000C /* AppIcon-29@2x~ipad.png */; };
+        C2000000000000000000000D /* AppIcon-40~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = C1000000000000000000000D /* AppIcon-40~ipad.png */; };
+        C2000000000000000000000E /* AppIcon-40@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = C1000000000000000000000E /* AppIcon-40@2x~ipad.png */; };
+        C2000000000000000000000F /* AppIcon~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = C1000000000000000000000F /* AppIcon~ipad.png */; };
+        C20000000000000000000010 /* AppIcon@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000010 /* AppIcon@2x~ipad.png */; };
+        C20000000000000000000011 /* AppIcon-83.5@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000011 /* AppIcon-83.5@2x~ipad.png */; };
+        C20000000000000000000012 /* AppIcon-60@2x~car.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000012 /* AppIcon-60@2x~car.png */; };
+        C20000000000000000000013 /* AppIcon-60@3x~car.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000013 /* AppIcon-60@3x~car.png */; };
+        C20000000000000000000014 /* AppIcon~ios-marketing.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000014 /* AppIcon~ios-marketing.png */; };
+        C20000000000000000000015 /* Discord@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000015 /* Discord@3x.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -41,6 +62,16 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B10000000000000000000009 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -48,12 +79,36 @@
 		3A7B0DD22DCD1C90003A9644 /* iRPC Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "iRPC Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		3A7B0DDC2DCD1C90003A9644 /* iRPC UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "iRPC UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F49296B12DC9520600FA24D8 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+        B10000000000000000000002 /* iRPC-Xtool.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "iRPC-Xtool.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+        C10000000000000000000000 /* AppIcon-20@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-20@2x.png"; sourceTree = "<group>"; };
+        C10000000000000000000001 /* AppIcon-20@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-20@3x.png"; sourceTree = "<group>"; };
+        C10000000000000000000002 /* AppIcon-29.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-29.png"; sourceTree = "<group>"; };
+        C10000000000000000000003 /* AppIcon-29@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-29@2x.png"; sourceTree = "<group>"; };
+        C10000000000000000000004 /* AppIcon-29@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-29@3x.png"; sourceTree = "<group>"; };
+        C10000000000000000000005 /* AppIcon-40@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-40@2x.png"; sourceTree = "<group>"; };
+        C10000000000000000000006 /* AppIcon-40@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-40@3x.png"; sourceTree = "<group>"; };
+        C10000000000000000000007 /* AppIcon@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon@2x.png"; sourceTree = "<group>"; };
+        C10000000000000000000008 /* AppIcon@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon@3x.png"; sourceTree = "<group>"; };
+        C10000000000000000000009 /* AppIcon-20~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-20~ipad.png"; sourceTree = "<group>"; };
+        C1000000000000000000000A /* AppIcon-20@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-20@2x~ipad.png"; sourceTree = "<group>"; };
+        C1000000000000000000000B /* AppIcon-29~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-29~ipad.png"; sourceTree = "<group>"; };
+        C1000000000000000000000C /* AppIcon-29@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-29@2x~ipad.png"; sourceTree = "<group>"; };
+        C1000000000000000000000D /* AppIcon-40~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-40~ipad.png"; sourceTree = "<group>"; };
+        C1000000000000000000000E /* AppIcon-40@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-40@2x~ipad.png"; sourceTree = "<group>"; };
+        C1000000000000000000000F /* AppIcon~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon~ipad.png"; sourceTree = "<group>"; };
+        C10000000000000000000010 /* AppIcon@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon@2x~ipad.png"; sourceTree = "<group>"; };
+        C10000000000000000000011 /* AppIcon-83.5@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-83.5@2x~ipad.png"; sourceTree = "<group>"; };
+        C10000000000000000000012 /* AppIcon-60@2x~car.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-60@2x~car.png"; sourceTree = "<group>"; };
+        C10000000000000000000013 /* AppIcon-60@3x~car.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-60@3x~car.png"; sourceTree = "<group>"; };
+        C10000000000000000000014 /* AppIcon~ios-marketing.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon~ios-marketing.png"; sourceTree = "<group>"; };
+        C10000000000000000000015 /* Discord@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Discord@3x.png"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		3A7B0DC32DCD1C8E003A9644 /* iRPC */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
+                B1000000000000000000000A /* Exceptions for iRPC-Xtool */,
 				A10000000000000000000001 /* Exceptions for iRPC */,
 			);
 			path = iRPC;
@@ -69,6 +124,11 @@
 			);
 			target = 3A7B0DC12DCD1C8E003A9644 /* iRPC */;
 		};
+        B1000000000000000000000A /* Exceptions for iRPC-Xtool */ = {
+            isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+            membershipExceptions = (Assets.xcassets, Info.plist, );
+            target = B10000000000000000000001 /* iRPC-Xtool */;
+        };
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,7 +139,6 @@
 				3AD92A7E2DD39FD100CCE9E4 /* DiscordSocialKit in Frameworks */,
 				3A4B2FD22DCE6FDF006DFDDA /* MusadoraKit in Frameworks */,
 				3AC1BE732DD278C500CF3D2C /* NowPlayingKit in Frameworks */,
-				F480CA2F2DDB9A39002493DD /* ScrobbleKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -97,12 +156,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B10000000000000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3AD92A7E2DD39FD100CCE9E4 /* DiscordSocialKit in Frameworks */,
+				3A4B2FD22DCE6FDF006DFDDA /* MusadoraKit in Frameworks */,
+				3AC1BE732DD278C500CF3D2C /* NowPlayingKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		F4BE1C282DC94AD5009B622C = {
 			isa = PBXGroup;
 			children = (
+                B1000000000000000000000B /* Xtool resources */,
 				F49296B12DC9520600FA24D8 /* README.md */,
 				3A7B0DC32DCD1C8E003A9644 /* iRPC */,
 				F4BE1C322DC94AD5009B622C /* Products */,
@@ -112,6 +182,7 @@
 		F4BE1C322DC94AD5009B622C /* Products */ = {
 			isa = PBXGroup;
 			children = (
+                B10000000000000000000002 /* iRPC-Xtool.app */,
 				3A7B0DC22DCD1C8E003A9644 /* iRPC.app */,
 				3A7B0DD22DCD1C90003A9644 /* iRPC Tests.xctest */,
 				3A7B0DDC2DCD1C90003A9644 /* iRPC UITests.xctest */,
@@ -119,6 +190,35 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+        B1000000000000000000000B /* Xtool resources */ = {
+            isa = PBXGroup;
+            children = (
+                C10000000000000000000000 /* AppIcon-20@2x.png */,
+                C10000000000000000000001 /* AppIcon-20@3x.png */,
+                C10000000000000000000002 /* AppIcon-29.png */,
+                C10000000000000000000003 /* AppIcon-29@2x.png */,
+                C10000000000000000000004 /* AppIcon-29@3x.png */,
+                C10000000000000000000005 /* AppIcon-40@2x.png */,
+                C10000000000000000000006 /* AppIcon-40@3x.png */,
+                C10000000000000000000007 /* AppIcon@2x.png */,
+                C10000000000000000000008 /* AppIcon@3x.png */,
+                C10000000000000000000009 /* AppIcon-20~ipad.png */,
+                C1000000000000000000000A /* AppIcon-20@2x~ipad.png */,
+                C1000000000000000000000B /* AppIcon-29~ipad.png */,
+                C1000000000000000000000C /* AppIcon-29@2x~ipad.png */,
+                C1000000000000000000000D /* AppIcon-40~ipad.png */,
+                C1000000000000000000000E /* AppIcon-40@2x~ipad.png */,
+                C1000000000000000000000F /* AppIcon~ipad.png */,
+                C10000000000000000000010 /* AppIcon@2x~ipad.png */,
+                C10000000000000000000011 /* AppIcon-83.5@2x~ipad.png */,
+                C10000000000000000000012 /* AppIcon-60@2x~car.png */,
+                C10000000000000000000013 /* AppIcon-60@3x~car.png */,
+                C10000000000000000000014 /* AppIcon~ios-marketing.png */,
+                C10000000000000000000015 /* Discord@3x.png */,
+            );
+            path = Resources/Xtool;
+            sourceTree = "<group>";
+        };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -143,7 +243,6 @@
 				3A4B2FD12DCE6FDF006DFDDA /* MusadoraKit */,
 				3AC1BE722DD278C500CF3D2C /* NowPlayingKit */,
 				3AD92A7D2DD39FD100CCE9E4 /* DiscordSocialKit */,
-				F480CA2E2DDB9A39002493DD /* ScrobbleKit */,
 			);
 			productName = "iRPC";
 			productReference = 3A7B0DC22DCD1C8E003A9644 /* iRPC.app */;
@@ -189,6 +288,32 @@
 			productReference = 3A7B0DDC2DCD1C90003A9644 /* iRPC UITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		B10000000000000000000001 /* iRPC-Xtool */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B10000000000000000000003 /* Build configuration list for PBXNativeTarget "iRPC" */;
+			buildPhases = (
+				B10000000000000000000006 /* Sources */,
+				B10000000000000000000007 /* Frameworks */,
+				B10000000000000000000008 /* Resources */,
+				B10000000000000000000009 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				3A7B0DC32DCD1C8E003A9644 /* iRPC */,
+			);
+			name = "iRPC-Xtool";
+			packageProductDependencies = (
+				3A4B2FD12DCE6FDF006DFDDA /* MusadoraKit */,
+				3AC1BE722DD278C500CF3D2C /* NowPlayingKit */,
+				3AD92A7D2DD39FD100CCE9E4 /* DiscordSocialKit */,
+			);
+			productName = "iRPC-Xtool";
+			productReference = B10000000000000000000002 /* iRPC.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -222,17 +347,16 @@
 			mainGroup = F4BE1C282DC94AD5009B622C;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				F4BE1C4E2DC94B49009B622C /* XCRemoteSwiftPackageReference "LaunchAtLogin-Modern" */,
 				3A4B2FD02DCE6FDF006DFDDA /* XCRemoteSwiftPackageReference "MusadoraKit" */,
 				3AC1BE712DD278C500CF3D2C /* XCRemoteSwiftPackageReference "NowPlayingKit" */,
-				3AD92A7C2DD39FD100CCE9E4 /* XCRemoteSwiftPackageReference "DiscordSocialKit" */,
-				F480CA2D2DDB9A39002493DD /* XCRemoteSwiftPackageReference "ScrobbleKit" */,
+				3AD92A7C2DD39FD100CCE9E4 /* XCLocalSwiftPackageReference "Vendor/DiscordSocialKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F4BE1C322DC94AD5009B622C /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+                B10000000000000000000001 /* iRPC-Xtool */,
 				3A7B0DC12DCD1C8E003A9644 /* iRPC */,
 				3A7B0DD12DCD1C90003A9644 /* iRPC Tests */,
 				3A7B0DDB2DCD1C90003A9644 /* iRPC UITests */,
@@ -262,6 +386,35 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B10000000000000000000008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+                C20000000000000000000000 /* AppIcon-20@2x.png in Resources */,
+                C20000000000000000000001 /* AppIcon-20@3x.png in Resources */,
+                C20000000000000000000002 /* AppIcon-29.png in Resources */,
+                C20000000000000000000003 /* AppIcon-29@2x.png in Resources */,
+                C20000000000000000000004 /* AppIcon-29@3x.png in Resources */,
+                C20000000000000000000005 /* AppIcon-40@2x.png in Resources */,
+                C20000000000000000000006 /* AppIcon-40@3x.png in Resources */,
+                C20000000000000000000007 /* AppIcon@2x.png in Resources */,
+                C20000000000000000000008 /* AppIcon@3x.png in Resources */,
+                C20000000000000000000009 /* AppIcon-20~ipad.png in Resources */,
+                C2000000000000000000000A /* AppIcon-20@2x~ipad.png in Resources */,
+                C2000000000000000000000B /* AppIcon-29~ipad.png in Resources */,
+                C2000000000000000000000C /* AppIcon-29@2x~ipad.png in Resources */,
+                C2000000000000000000000D /* AppIcon-40~ipad.png in Resources */,
+                C2000000000000000000000E /* AppIcon-40@2x~ipad.png in Resources */,
+                C2000000000000000000000F /* AppIcon~ipad.png in Resources */,
+                C20000000000000000000010 /* AppIcon@2x~ipad.png in Resources */,
+                C20000000000000000000011 /* AppIcon-83.5@2x~ipad.png in Resources */,
+                C20000000000000000000012 /* AppIcon-60@2x~car.png in Resources */,
+                C20000000000000000000013 /* AppIcon-60@3x~car.png in Resources */,
+                C20000000000000000000014 /* AppIcon~ios-marketing.png in Resources */,
+                C20000000000000000000015 /* Discord@3x.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -280,6 +433,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		3A7B0DD82DCD1C90003A9644 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B10000000000000000000006 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -581,6 +741,89 @@
 			};
 			name = Release;
 		};
+		B10000000000000000000004 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+                SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) IRPC_XTOOL";
+                STRIP_BITCODE_FROM_COPIED_FILES = NO;
+                ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
+                ENABLE_PREVIEWS = NO;
+                CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGN_ENTITLEMENTS = iRPC/iRPC.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = iRPC;
+				INFOPLIST_FILE = Resources/Xtool-Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "iRPC requires access to Apple Music to function.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UIStatusBarStyle = "";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = ("$(inherited)", "$(SWIFT_RESOURCE_DIR)/iphoneos",);
+				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.adrian.ios.iRPC;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B10000000000000000000005 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+                SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) IRPC_XTOOL";
+                STRIP_BITCODE_FROM_COPIED_FILES = NO;
+                ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
+                ENABLE_PREVIEWS = NO;
+                CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGN_ENTITLEMENTS = iRPC/iRPC.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = iRPC;
+				INFOPLIST_FILE = Resources/Xtool-Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "iRPC requires access to Apple Music to function.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UIStatusBarStyle = "";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = ("$(inherited)", "$(SWIFT_RESOURCE_DIR)/iphoneos",);
+				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.adrian.ios.iRPC;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -620,6 +863,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		B10000000000000000000003 /* Build configuration list for PBXNativeTarget "iRPC" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B10000000000000000000004 /* Debug */,
+				B10000000000000000000005 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -627,43 +879,27 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/rryam/MusadoraKit";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 6.1.0;
+				kind = exactVersion;
+				version = 6.1.0;
 			};
 		};
 		3AC1BE712DD278C500CF3D2C /* XCRemoteSwiftPackageReference "NowPlayingKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/itoolio/NowPlayingKit";
 			requirement = {
-				branch = main;
-				kind = branch;
+				revision = 6b18f98ae1e0e23ff4f6dc8b63d6e321aa5aede6;
+				kind = revision;
 			};
 		};
-		3AD92A7C2DD39FD100CCE9E4 /* XCRemoteSwiftPackageReference "DiscordSocialKit" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/itoolio/DiscordSocialKit";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
-		F480CA2D2DDB9A39002493DD /* XCRemoteSwiftPackageReference "ScrobbleKit" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/tfmart/ScrobbleKit";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.1.1;
-			};
-		};
-		F4BE1C4E2DC94B49009B622C /* XCRemoteSwiftPackageReference "LaunchAtLogin-Modern" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/sindresorhus/LaunchAtLogin-Modern";
-			requirement = {
-				kind = exactVersion;
-				version = 1.1.0;
-			};
-		};
+
 /* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCLocalSwiftPackageReference section */
+        3AD92A7C2DD39FD100CCE9E4 /* XCLocalSwiftPackageReference "Vendor/DiscordSocialKit" */ = {
+            isa = XCLocalSwiftPackageReference;
+            relativePath = Vendor/DiscordSocialKit;
+        };
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		3A4B2FD12DCE6FDF006DFDDA /* MusadoraKit */ = {
@@ -678,13 +914,8 @@
 		};
 		3AD92A7D2DD39FD100CCE9E4 /* DiscordSocialKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 3AD92A7C2DD39FD100CCE9E4 /* XCRemoteSwiftPackageReference "DiscordSocialKit" */;
+			package = 3AD92A7C2DD39FD100CCE9E4 /* XCLocalSwiftPackageReference "Vendor/DiscordSocialKit" */;
 			productName = DiscordSocialKit;
-		};
-		F480CA2E2DDB9A39002493DD /* ScrobbleKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = F480CA2D2DDB9A39002493DD /* XCRemoteSwiftPackageReference "ScrobbleKit" */;
-			productName = ScrobbleKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

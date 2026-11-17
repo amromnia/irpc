@@ -1,51 +1,22 @@
 {
-  "originHash" : "240375c5cdc899b9e07c1a184d26fbdec7d19ba9faad3188bba19774d0644d81",
-  "pins" : [
+  "pins": [
     {
-      "identity" : "discordsocialkit",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/itoolio/DiscordSocialKit",
-      "state" : {
-        "branch" : "main",
-        "revision" : "425e949ef11b54823a4902ff34c8c02771c20e8c"
+      "identity": "musadorakit",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/rryam/MusadoraKit",
+      "state": {
+        "revision": "ec63ef1bdb9c00457f3b1ab54ecd1d8fa96bdc72",
+        "version": "6.1.0"
       }
     },
     {
-      "identity" : "launchatlogin-modern",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/sindresorhus/LaunchAtLogin-Modern",
-      "state" : {
-        "revision" : "a04ec1c363be3627734f6dad757d82f5d4fa8fcc",
-        "version" : "1.1.0"
-      }
-    },
-    {
-      "identity" : "musadorakit",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rryam/MusadoraKit",
-      "state" : {
-        "revision" : "ec63ef1bdb9c00457f3b1ab54ecd1d8fa96bdc72",
-        "version" : "6.1.0"
-      }
-    },
-    {
-      "identity" : "nowplayingkit",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/itoolio/NowPlayingKit",
-      "state" : {
-        "branch" : "main",
-        "revision" : "6b18f98ae1e0e23ff4f6dc8b63d6e321aa5aede6"
-      }
-    },
-    {
-      "identity" : "scrobblekit",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tfmart/ScrobbleKit",
-      "state" : {
-        "revision" : "e12df14677589e29919352e47a0c500cc2e81fde",
-        "version" : "1.1.1"
+      "identity": "nowplayingkit",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/itoolio/NowPlayingKit",
+      "state": {
+        "revision": "6b18f98ae1e0e23ff4f6dc8b63d6e321aa5aede6"
       }
     }
   ],
-  "version" : 3
+  "version": 3
 }

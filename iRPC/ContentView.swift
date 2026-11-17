@@ -8,7 +8,9 @@
 import Combine
 import DiscordSocialKit
 import NowPlayingKit
+#if !IRPC_XTOOL
 import SwiftData
+#endif
 import SwiftUI
 import MusicKit
 import MusadoraKit
@@ -29,7 +31,9 @@ struct ContentView: View {
     private let manager = NowPlayingManager.shared
     @State private var lastUpdateTime: TimeInterval = 0
     private let updateInterval: TimeInterval = 1
+    #if !IRPC_XTOOL
     @Environment(\.modelContext) private var modelContext
+    #endif
     @State private var isMusicCurrentlyPlaying = false
     @State private var toggleRefreshTrigger = UUID()
     @State private var playbackSubscription: AnyCancellable?
@@ -115,7 +119,7 @@ struct ContentView: View {
                 Section {
                     VStack(spacing: 8) {
                         HStack {
-                            Image("Discord")
+                            discordImage
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .frame(width: 24, height: 24)
@@ -146,12 +150,12 @@ struct ContentView: View {
                         }
                     }
 
+                    if let sessionError {
+                        Text(sessionError).foregroundStyle(.red)
+                    }
                     if shouldShowRPCToggle {
                         Button(userEnabledRPC ? "Stop Sharing" : startButtonTitle) {
                             handleUserToggleRPC(enabled: !userEnabledRPC)
-                        }
-                        if let sessionError {
-                            Text(sessionError).foregroundStyle(.red)
                         }
                         if #available(iOS 26.0, *) {
                             Text(background.status).font(.caption).foregroundStyle(.secondary)
@@ -192,6 +196,9 @@ struct ContentView: View {
                 handleUserToggleRPC(enabled: false)
             }
         }
+        .onChange(of: discord.isAuthenticated) { _, authenticated in
+            if !authenticated && userEnabledRPC { handleUserToggleRPC(enabled: false) }
+        }
         .onChange(of: manager.isPlaying) { _, newValue in
             print("🎵 Music playing state changed: \(newValue)")
             DispatchQueue.main.async {
@@ -227,7 +234,11 @@ struct ContentView: View {
         .task(priority: .high) {
             isLoading = true
             await MainActor.run {
+                #if IRPC_XTOOL
+                discord.setTokenStorage(KeychainTokenStorage(service: Bundle.main.bundleIdentifier! + ".discord"))
+                #else
                 discord.setModelContext(modelContext)
+                #endif
             }
 
             let hasExistingToken = await checkExistingToken()
@@ -606,23 +617,21 @@ struct ContentView: View {
     }
 
     private func checkExistingToken() async -> Bool {
-        var descriptor = FetchDescriptor<DiscordToken>(
-            sortBy: [SortDescriptor(\DiscordToken.expiresAt, order: .reverse)]
-        )
-        descriptor.fetchLimit = 1
-
-        do {
-            if let token = try modelContext.fetch(descriptor).first {
-                print("🔍 Found existing token with ID: \(token.tokenId)")
-                return true
-            }
-            print("ℹ️ No existing token found")
-            return false
-        } catch {
-            print("❌ Failed to check for existing token: \(error)")
+        do { return try discord.hasStoredToken() }
+        catch {
+            sessionError = "Unable to read Discord credentials. Check device storage access."
             return false
         }
     }
+
+    private var discordImage: Image {
+        #if IRPC_XTOOL
+        return Image("Discord").renderingMode(.template)
+        #else
+        return Image("Discord")
+        #endif
+    }
+
 }
 
 extension View {

@@ -3,6 +3,10 @@
 A SwiftUI iPhone/iPad app that shares Apple Music playback through DiscordSocialKit.
 Requires iOS 17.6 or later. Background sharing requires iOS 26 or later.
 
+For an entirely local Windows/WSL build using xtool 2.0, see
+[BUILD-WSL.md](docs/BUILD-WSL.md). It uses the existing Xcode project with a separate
+portable target and Keychain token storage; ordinary Xcode builds keep SwiftData.
+
 ## Build an unsigned IPA on GitHub
 
 1. Push these files to your fork and enable GitHub Actions if prompted.
@@ -47,15 +51,16 @@ Discord deliveries. The dependency exposes delivery failures through logging.
 
 On iOS 17.6–25, **Start Sharing While Open** uses the existing foreground updater
 and stops sharing when iRPC enters the background. Silent audio and notification
-keep-alives have been removed. Discord tokens are stored locally with cloud sync
-disabled; the dependency still uses SwiftData rather than Keychain.
+keep-alives have been removed. Cloud sync is disabled. Standard Xcode builds store
+tokens in SwiftData; the xtool target uses device-local Keychain storage.
 
 ## Verification
 
 CI compiles the real device app, checks that the background task keys are present,
 checks the app has no signing identity or provisioning profile, and validates the
-IPA ZIP. Compilation and on-device behavior have not been run from the Windows
-development workspace.
+IPA ZIP. The xtool target has also compiled and produced a verified unsigned IPA
+locally in WSL. On-device behavior and the updated standard Xcode path remain
+unverified; see [the WSL build notes](docs/BUILD-WSL.md).
 
 After signing and installing on a physical iPhone:
 
@@ -70,8 +75,8 @@ After signing and installing on a physical iPhone:
    remains fresh; the API does not guarantee a full 30 minutes.
 7. On an older supported iOS version, confirm sharing stops after backgrounding.
 
-See [the implementation/security review](docs/REVIEW.md) for findings, unresolved
-trust questions, and the native-versus-Expo recommendation.
+See [the local fork notes](Vendor/DiscordSocialKit/FORK.md) for credential storage
+and the unresolved provenance question around the inherited Discord SDK binary.
 
 ## License and credits
 

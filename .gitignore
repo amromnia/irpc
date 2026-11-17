@@ -1,4 +1,9 @@
 # General
+build/
+xtool/
+.bsp/
+Resources/Xtool/
+**/.build/
 .DS_Store
 .AppleDouble
 .LSOverride
