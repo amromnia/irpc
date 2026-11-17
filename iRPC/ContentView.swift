@@ -18,6 +18,7 @@ import MusadoraKit
 struct ContentView: View {
     @ObservedObject private var background = BackgroundController.shared
     @State private var sessionError: String?
+    @AppStorage("presence.sessionMinutes") private var sessionMinutes = 120
     @Environment(\.scenePhase) private var scenePhase
     @State private var nowPlaying = NowPlayingData(id: "", title: "Loading...", artist: "")
     @State private var lastPlayed: Song?
@@ -97,7 +98,7 @@ struct ContentView: View {
     }
 
     private var startButtonTitle: String {
-        if #available(iOS 26.0, *) { return "Start Sharing for 30 Minutes" }
+        if #available(iOS 26.0, *) { return "Start Sharing for \(sessionMinutes) Minutes" }
         return "Start Sharing While Open"
     }
 
@@ -154,11 +155,26 @@ struct ContentView: View {
                         Text(sessionError).foregroundStyle(.red)
                     }
                     if shouldShowRPCToggle {
+                        if #available(iOS 26.0, *) {
+                            Picker("Session length", selection: $sessionMinutes) {
+                                Text("30 minutes").tag(30)
+                                Text("2 hours").tag(120)
+                                Text("4 hours").tag(240)
+                            }
+                            .disabled(userEnabledRPC)
+                        }
                         Button(userEnabledRPC ? "Stop Sharing" : startButtonTitle) {
                             handleUserToggleRPC(enabled: !userEnabledRPC)
                         }
                         if #available(iOS 26.0, *) {
                             Text(background.status).font(.caption).foregroundStyle(.secondary)
+                            if userEnabledRPC {
+                                Text(discord.presenceStatus).font(.caption).foregroundStyle(.secondary)
+                                if let acknowledged = discord.lastPresenceAcknowledgedAt {
+                                    Text("Last accepted: \(acknowledged.formatted(date: .omitted, time: .standard))")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
                         } else {
                             Text("Sharing stops when iRPC enters the background. Background sharing requires iOS 26.")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -563,7 +579,7 @@ struct ContentView: View {
             }
             discord.isRunning = true
             do {
-                try background.start(update: pollPresence, onStop: {
+                try background.start(minutes: sessionMinutes, update: pollPresence, onStop: {
                     userEnabledRPC = false
                     discord.stopPresenceUpdates()
                 })
@@ -604,8 +620,6 @@ struct ContentView: View {
                 duration: current.duration, currentTime: current.playbackTime,
                 artworkURL: current.artworkURL
             )
-            // The SDK may finish its artwork lookup after Stop was pressed.
-            if Task.isCancelled || !userEnabledRPC { discord.clearPlayback() }
         } catch NowPlayingError.noCurrentEntry {
             discord.clearPlayback()
         }

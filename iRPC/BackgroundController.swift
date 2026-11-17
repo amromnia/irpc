@@ -5,14 +5,14 @@ import UIKit
 @MainActor
 final class BackgroundController: ObservableObject {
     static let shared = BackgroundController()
-    static let checkCount: Int64 = 120
     static let interval: UInt64 = 15_000_000_000
 
     @Published private(set) var isRunning = false
-    @Published private(set) var status = "Start a 30-minute sharing session. iOS may stop it early."
+    @Published private(set) var status = "Start a sharing session. iOS may stop it early."
 
     private let identifier = Bundle.main.bundleIdentifier! + ".presence"
     private var registered = false
+    private var sessionMinutes = 30
     private var worker: Task<Void, Never>?
     private var activeTask: BGTask?
     private var update: (@MainActor () async throws -> Void)?
@@ -35,7 +35,7 @@ final class BackgroundController: ObservableObject {
         }
     }
 
-    func start(update: @escaping @MainActor () async throws -> Void,
+    func start(minutes: Int, update: @escaping @MainActor () async throws -> Void,
                onStop: @escaping @MainActor () -> Void) throws {
         guard !isRunning else { return }
         guard #available(iOS 26.0, *) else {
@@ -44,12 +44,14 @@ final class BackgroundController: ObservableObject {
         guard registered, UIApplication.shared.applicationState == .active else {
             throw SessionError.notReady
         }
+        let minutes = [30, 120, 240].contains(minutes) ? minutes : 30
+        self.sessionMinutes = minutes
         self.update = update
         self.onStop = onStop
         let request = BGContinuedProcessingTaskRequest(
             identifier: identifier,
             title: "Share Apple Music with Discord",
-            subtitle: "30-minute listening session"
+            subtitle: "\(minutes)-minute listening session"
         )
         request.strategy = .fail
         isRunning = true
@@ -91,19 +93,21 @@ final class BackgroundController: ObservableObject {
                 self.stop(success: false, message: "iOS ended the session. Tap Start to try again.")
             }
         }
-        task.progress.totalUnitCount = Self.checkCount
+        let checkCount = Int64(sessionMinutes * 60 / 15)
+        let minutes = sessionMinutes
+        task.progress.totalUnitCount = checkCount
         worker = Task { @MainActor [weak self] in
             do {
-                for step in 1...Self.checkCount {
+                for step in 1...checkCount {
                     try Task.checkCancellation()
                     try await update()
                     try Task.checkCancellation()
-                    self?.status = "Sharing Apple Music with Discord (up to 30 minutes)."
+                    self?.status = "Sharing Apple Music with Discord (up to \(minutes) minutes)."
                     try await Task.sleep(nanoseconds: Self.interval)
                     task.progress.completedUnitCount = step
                 }
                 guard let self, self.activeTask === task else { return }
-                self.stop(message: "30-minute session complete. Tap Start to share again.")
+                self.stop(message: "\(minutes)-minute session complete. Tap Start to share again.")
             } catch is CancellationError {
                 // The stop/expiration path already completes the system task.
             } catch {

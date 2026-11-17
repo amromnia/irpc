@@ -26,6 +26,10 @@ public final class DiscordManager: ObservableObject {
 
 	// Add artwork cache
 	private var artworkCache: [String: URL] = [:]
+    private var timeline = PresenceTimeline()
+    private var presenceGeneration = 0
+    @Published public private(set) var presenceStatus = "No presence update sent yet."
+    @Published public private(set) var lastPresenceAcknowledgedAt: Date?
 
 	@Published public private(set) var isReady = false
 	@Published public private(set) var isAuthenticated = false
@@ -344,6 +348,10 @@ public final class DiscordManager: ObservableObject {
 		guard let client = getClient() else { return }
 		print("🧹 Clearing rich presence...")
 
+        presenceGeneration += 1
+        timeline.reset()
+        presenceStatus = "Presence cleared."
+        lastPresenceAcknowledgedAt = nil
 		Discord_Client_ClearRichPresence(client)
 	}
 
@@ -351,7 +359,10 @@ public final class DiscordManager: ObservableObject {
 		let namePtr: UnsafeMutablePointer<UInt8>
 		let detailsPtr: UnsafeMutablePointer<UInt8>
 		let statePtr: UnsafeMutablePointer<UInt8>
+        let imagePtr: UnsafeMutablePointer<UInt8>?
+        let imageTextPtr: UnsafeMutablePointer<UInt8>?
 		let manager: DiscordManager
+        let generation: Int
 	}
 
 	private static let richPresenceCallback:
@@ -370,8 +381,19 @@ public final class DiscordManager: ObservableObject {
 					context.namePtr.deallocate()
 					context.detailsPtr.deallocate()
 					context.statePtr.deallocate()
+                    context.imagePtr?.deallocate()
+                    context.imageTextPtr?.deallocate()
 					contextPtr.deallocate()
 				}
+
+                let accepted = result.map { Discord_ClientResult_Successful($0) } ?? false
+                let manager = context.manager
+                let generation = context.generation
+                Task { @MainActor in
+                    guard manager.presenceGeneration == generation else { return }
+                    manager.presenceStatus = accepted ? "Discord accepted the last update." : "Discord rejected the last update."
+                    if accepted { manager.lastPresenceAcknowledgedAt = Date() }
+                }
 
 				if let result = result {
 					if Discord_ClientResult_Successful(result) {
@@ -398,11 +420,6 @@ public final class DiscordManager: ObservableObject {
 				}
 			}
 
-	private func validateAssetURL(_ url: URL) -> Bool {
-		print("Validating asset URL: \(url)")
-		let urlString = url.absoluteString
-		return urlString.count >= 1 && urlString.count <= 256
-	}
 
 	public func updateRichPresence(
 		id: String, title: String, artist: String, duration: TimeInterval,
@@ -431,6 +448,24 @@ public final class DiscordManager: ObservableObject {
 		print("- Duration: \(duration)")
 		print("- Current Time: \(currentTime)")
 
+        presenceGeneration += 1
+        let generation = presenceGeneration
+        let times = timeline.timestamps(id: id, duration: duration, position: currentTime,
+                                        now: Date().timeIntervalSince1970)
+        presenceStatus = "Preparing presence update…"
+
+        // The system player already supplies artwork, including library-only tracks.
+        var image = PresenceTimeline.artwork(provided: artworkURL, cached: artworkCache[id])
+        if image == nil, !id.isEmpty {
+            do {
+                let song = try await MCatalog.song(id: MusicItemID(rawValue: id), fetch: [.albums])
+                image = PresenceTimeline.artwork(provided: song.artwork?.url(width: 600, height: 600),
+                                                cached: song.albums?.first?.artwork?.url(width: 600, height: 600))
+            } catch {
+                // Send metadata even if catalog lookup is unavailable.
+            }
+        }
+        guard generation == presenceGeneration, !Task.isCancelled, isAuthenticated, isRunning else { return }
 		var activity = Discord_Activity()
 		Discord_Activity_Init(&activity)
 
@@ -441,33 +476,23 @@ public final class DiscordManager: ObservableObject {
 		var assets = Discord_ActivityAssets()
 		Discord_ActivityAssets_Init(&assets)
 
-		// Check cache first
-		if let cachedArtwork = artworkCache[id] {
-			var artworkStr = makeDiscordString(from: cachedArtwork.absoluteString)
-			var hoverText = makeDiscordString(from: "\(title) by \(artist)")
-
-			Discord_ActivityAssets_SetLargeImage(&assets, &artworkStr)
-			Discord_ActivityAssets_SetLargeText(&assets, &hoverText)
-		} else {
-			// Fetch and cache if not found
-			do {
-				let song = try await MCatalog.song(id: MusicItemID(rawValue: id), fetch: [.albums])
-				if let artworkURL = song.albums?.first?.artwork?.url(width: 600, height: 600),
-					validateAssetURL(artworkURL)
-				{
-					// Cache the URL
-					artworkCache[id] = artworkURL
-
-					var artworkStr = makeDiscordString(from: artworkURL.absoluteString)
-					var hoverText = makeDiscordString(from: "\(title) by \(artist)")
-
-					Discord_ActivityAssets_SetLargeImage(&assets, &artworkStr)
-					Discord_ActivityAssets_SetLargeText(&assets, &hoverText)
-				}
-			} catch {
-				print("⚠️ Failed to fetch artwork: \(error)")
-			}
-		}
+        var imagePtr: UnsafeMutablePointer<UInt8>?
+        var imageTextPtr: UnsafeMutablePointer<UInt8>?
+        if let image {
+            artworkCache[id] = image
+            let imageBuffer = makeStringBuffer(from: image.absoluteString)
+            let textBuffer = makeStringBuffer(from: "\(title) by \(artist)")
+            imagePtr = imageBuffer.ptr
+            imageTextPtr = textBuffer.ptr
+            var imageString = Discord_String()
+            imageString.ptr = imageBuffer.ptr
+            imageString.size = Int(imageBuffer.size)
+            var textString = Discord_String()
+            textString.ptr = textBuffer.ptr
+            textString.size = Int(textBuffer.size)
+            Discord_ActivityAssets_SetLargeImage(&assets, &imageString)
+            Discord_ActivityAssets_SetLargeText(&assets, &textString)
+        }
 
 		// Add assets to activity
 		Discord_Activity_SetAssets(&activity, &assets)
@@ -476,7 +501,7 @@ public final class DiscordManager: ObservableObject {
 		let namePtr = makeStringBuffer(from: "Apple Music").ptr
 		var nameStr = Discord_String()
 		nameStr.ptr = namePtr
-		nameStr.size = Int(Int32(4))
+		nameStr.size = "Apple Music".utf8.count
 		Discord_Activity_SetName(&activity, nameStr)
 
 		// Set details (title)
@@ -497,27 +522,24 @@ public final class DiscordManager: ObservableObject {
 		var timestamps = Discord_ActivityTimestamps()
 		Discord_ActivityTimestamps_Init(&timestamps)
 
-		// Convert all times to milliseconds
-		let now = Date().timeIntervalSince1970
-		let startTime = UInt64((now - currentTime) * 1000)
-		let endTime = UInt64((now - currentTime + duration) * 1000)
-
-		print("🕒 Setting timestamps: start=\(startTime)ms, end=\(endTime)ms")
-
-		Discord_ActivityTimestamps_SetStart(&timestamps, startTime)
-		Discord_ActivityTimestamps_SetEnd(&timestamps, endTime)
-		Discord_Activity_SetTimestamps(&activity, &timestamps)
+        Discord_ActivityTimestamps_SetStart(&timestamps, times.start)
+        if let end = times.end { Discord_ActivityTimestamps_SetEnd(&timestamps, end) }
+        Discord_Activity_SetTimestamps(&activity, &timestamps)
 
 		// Create context for cleanup
 		let context = RichPresenceContext(
 			namePtr: namePtr,
 			detailsPtr: detailsPtr,
 			statePtr: statePtr,
-			manager: self
+            imagePtr: imagePtr,
+            imageTextPtr: imageTextPtr,
+			manager: self,
+            generation: generation
 		)
 		let contextPtr = UnsafeMutablePointer<RichPresenceContext>.allocate(capacity: 1)
 		contextPtr.initialize(to: context)
 
+        presenceStatus = "Waiting for Discord acknowledgement…"
 		print("🎵 Sending activity update to Discord...")
 		Discord_Client_UpdateRichPresence(
 			client, &activity, Self.richPresenceCallback, nil, contextPtr)

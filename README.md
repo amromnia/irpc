@@ -34,10 +34,11 @@ app; an unsigned build cannot establish that those services will work.
 
 ## Sharing
 
-Authorize Music access, connect Discord, and tap **Start Sharing for 30 Minutes**.
+Authorize Music access, connect Discord, choose 30 minutes, 2 hours, or 4 hours,
+and tap **Start Sharing**. The default session length is 2 hours.
 On iOS 26+, a `BGContinuedProcessingTask` checks playback approximately every 15
 seconds and submits Discord presence updates. Pausing playback clears presence.
-The session ends after 120 checks plus their waiting intervals, or earlier on
+The session ends after the selected number of polling intervals, or earlier on
 Stop, loss of authorization/connection, a processing error, system expiration,
 or cancellation through the system task UI. Actual duration includes request time.
 Each new session requires another tap in the foreground.
@@ -47,7 +48,15 @@ background execution. iOS controls execution and may stop the task early. Closin
 the app from the app switcher terminates it without a cleanup callback, so Discord
 presence may remain visible until it expires or the connection is cleared.
 The system progress UI describes completed polling intervals, not acknowledged
-Discord deliveries. The dependency exposes delivery failures through logging.
+Discord deliveries. The app shows the last Discord acceptance time and whether an
+update is preparing, waiting for acknowledgement, or rejected. Acceptance does not
+prove another Discord client has rendered the activity.
+
+The selected session length is an app setting, not a guaranteed iOS runtime.
+Sessions do not restart automatically from the background. The countdown predicts
+playback for up to 30 seconds between fresh player samples, then corrects to new
+observations. MusicKit artwork is used first; Discord still needs to fetch its URL.
+See [presence notes](docs/PRESENCE.md) for the inherited application ID and troubleshooting.
 
 On iOS 17.6–25, **Start Sharing While Open** uses the existing foreground updater
 and stops sharing when iRPC enters the background. Silent audio and notification
@@ -71,8 +80,8 @@ After signing and installing on a physical iPhone:
 4. Test Stop and system UI cancellation; confirm the button resets and presence clears.
 5. Rapidly stop/restart a session and confirm only one session runs.
 6. Test network loss and restoration, system expiration, force quit, and a full
-   120-check session. Record actual background runtime and whether Music state
-   remains fresh; the API does not guarantee a full 30 minutes.
+   full selected session. Record actual background runtime and whether Music state
+   remains fresh; the API does not guarantee the selected runtime.
 7. On an older supported iOS version, confirm sharing stops after backgrounding.
 
 See [the local fork notes](Vendor/DiscordSocialKit/FORK.md) for credential storage
