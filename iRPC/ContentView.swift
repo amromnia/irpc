@@ -14,6 +14,9 @@ import MusicKit
 import MusadoraKit
 
 struct ContentView: View {
+    @ObservedObject private var background = BackgroundController.shared
+    @State private var sessionError: String?
+    @Environment(\.scenePhase) private var scenePhase
     @State private var nowPlaying = NowPlayingData(id: "", title: "Loading...", artist: "")
     @State private var lastPlayed: Song?
     @State private var isShowingLastPlayed = false
@@ -86,7 +89,12 @@ struct ContentView: View {
     }
 
     private var shouldShowRPCToggle: Bool {
-        discord.isAuthenticated && discord.isReady && (manager.isPlaying || userEnabledRPC)
+        userEnabledRPC || (isAuthorized && discord.isAuthenticated && discord.isReady)
+    }
+
+    private var startButtonTitle: String {
+        if #available(iOS 26.0, *) { return "Start Sharing for 30 Minutes" }
+        return "Start Sharing While Open"
     }
 
     var body: some View {
@@ -139,13 +147,18 @@ struct ContentView: View {
                     }
 
                     if shouldShowRPCToggle {
-                        Toggle("Enable Rich Presence", isOn: $userEnabledRPC)
-                            .onChange(of: userEnabledRPC) { _, isEnabled in
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    handleUserToggleRPC(enabled: isEnabled)
-                                }
-                            }
-                            .id("toggle-\(toggleRefreshTrigger)")
+                        Button(userEnabledRPC ? "Stop Sharing" : startButtonTitle) {
+                            handleUserToggleRPC(enabled: !userEnabledRPC)
+                        }
+                        if let sessionError {
+                            Text(sessionError).foregroundStyle(.red)
+                        }
+                        if #available(iOS 26.0, *) {
+                            Text(background.status).font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text("Sharing stops when iRPC enters the background. Background sharing requires iOS 26.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 } header: {
                     Text("Discord Status")
@@ -172,6 +185,11 @@ struct ContentView: View {
                         Label("Discord Settings", systemImage: "gear")
                     }
                 }
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if #unavailable(iOS 26.0), phase == .background, userEnabledRPC {
+                handleUserToggleRPC(enabled: false)
             }
         }
         .onChange(of: manager.isPlaying) { _, newValue in
@@ -228,7 +246,7 @@ struct ContentView: View {
             isLoading = false
         }
         .onReceive(timer) { _ in
-            guard isAuthorized else { return }
+            guard isAuthorized, !background.isRunning else { return }
             Task {
                 await updatePlaybackTime()
             }
@@ -482,6 +500,7 @@ struct ContentView: View {
     }
 
     private func updateDiscordDirectly(with playback: NowPlayingData) {
+        guard userEnabledRPC, !Task.isCancelled else { return }
         discord.updateCurrentPlayback(
             id: playback.id,
             title: playback.title,
@@ -524,17 +543,60 @@ struct ContentView: View {
     }
 
     private func handleUserToggleRPC(enabled: Bool) {
-        print("🎮 User toggled Discord RPC: \(enabled ? "ON" : "OFF")")
-
+        sessionError = nil
         if enabled {
-            discord.startPresenceUpdates()
-            if manager.isPlaying {
-                Task { await updateDiscordWithCurrentSong() }
+            userEnabledRPC = true
+            if #unavailable(iOS 26.0) {
+                discord.startPresenceUpdates()
+                return
             }
-            BackgroundController.shared.start()
+            discord.isRunning = true
+            do {
+                try background.start(update: pollPresence, onStop: {
+                    userEnabledRPC = false
+                    discord.stopPresenceUpdates()
+                })
+            } catch {
+                userEnabledRPC = false
+                discord.stopPresenceUpdates()
+                sessionError = error.localizedDescription
+            }
         } else {
+            userEnabledRPC = false
+            background.stop()
             discord.stopPresenceUpdates()
-            BackgroundController.shared.stop()
+        }
+    }
+
+    @MainActor
+    private func pollPresence() async throws {
+        try Task.checkCancellation()
+        guard userEnabledRPC else { throw CancellationError() }
+        guard isAuthorized, discord.isAuthenticated, discord.isReady else {
+            throw NSError(domain: "iRPC", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Music access or the Discord connection is unavailable."
+            ])
+        }
+        // Read the player directly: the wrapper's published state can lag notifications.
+        guard SystemMusicPlayer.shared.state.playbackStatus == .playing else {
+            discord.clearPlayback()
+            return
+        }
+        do {
+            let current = try await manager.getCurrentPlayback()
+            try Task.checkCancellation()
+            guard userEnabledRPC else { throw CancellationError() }
+            nowPlaying = current
+            isShowingLastPlayed = false
+            await discord.updateRichPresence(
+                id: current.id, title: current.title, artist: current.artist,
+                duration: current.duration, currentTime: current.playbackTime,
+                artworkURL: current.artworkURL
+            )
+            // The SDK may finish its artwork lookup after Stop was pressed.
+            if Task.isCancelled || !userEnabledRPC { discord.clearPlayback() }
+        } catch NowPlayingError.noCurrentEntry {
+            discord.clearPlayback()
         }
     }
 

@@ -14,19 +14,21 @@ struct iRPCApp: App {
 	let container: ModelContainer
 
 	init() {
+		BackgroundController.shared.register()
 		do {
 			let schema = Schema([DiscordTokenModel.self])
 			let config = ModelConfiguration(
 				schema: schema,
 				isStoredInMemoryOnly: false,
-				allowsSave: true
+				allowsSave: true,
+				cloudKitDatabase: .none
 			)
 
 			container = try ModelContainer(
 				for: schema,
 				configurations: config
 			)
-			print("✅ ModelContainer initialized for CloudKit sync")
+			print("✅ Local ModelContainer initialized")
 		} catch {
 			print("❌ Failed to initialize ModelContainer: \(error)")
 			fatalError("Failed to initialize ModelContainer: \(error)")
