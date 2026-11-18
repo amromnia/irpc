@@ -24,6 +24,12 @@ struct PresenceCheck {
         precondition(PresenceTimeline.artwork(provided: artwork, cached: cached) == artwork,
                      "Use the supplied track artwork before a cached/catalog image")
         precondition(PresenceTimeline.artwork(provided: URL(string: "file:///secret"), cached: cached) == cached)
+        let deviceArtwork = URL(string: "musicKit://artwork/library/CD8FFE37-8AFF-4881-9577-2722738102B0/600x600")!
+        precondition(PublicArtworkPolicy.url(deviceArtwork) == nil,
+                     "The reported device-only URL must never be sent to Discord")
+        precondition(PublicArtworkPolicy.url(artwork) == artwork)
+        precondition(PublicArtworkPolicy.url(URL(string: "http://example.com/image")) == nil)
+        precondition(PublicArtworkPolicy.url(URL(string: "https://user:password@example.com/image")) == nil)
         print("PASS: countdown continuity, correction, seek, bounded prediction, pause/resume, and artwork selection")
     }
 }

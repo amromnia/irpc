@@ -68,7 +68,9 @@ it is not needed for local builds.
 2. Open **Accounts**, tap **+**, and connect Discord. Repeat for each account,
    switching the active Discord/browser user before authorizing another user.
 3. Enable the accounts that should receive updates. On **Music**, tap the round
-   play button to start sharing; pause stops sharing and cancels refresh requests.
+   play button to resume Music and share; if Music is already playing, it keeps
+   its position. Pause pauses Music, stops sharing, and cancels refresh requests.
+   Previous/next control the existing Music queue.
 4. Tap an account to view acknowledgements, reconnect, or remove it.
 5. **Settings** contains session length, update interval, auto-start on opening,
    optional background refresh, appearance, and artwork diagnostics.
@@ -108,8 +110,10 @@ queue entry and the underlying Song/MusicVideo. The playback dependency previous
 only inspected the queue-entry artwork. Settings → Artwork diagnostics reports
 which source exists, whether the generated URL works over HTTP, and whether the
 image decodes. URL query strings are omitted from copied diagnostics. This change
-has not yet established the cause of the reported artwork failure on a device.
-Discord image fetching is separate; see [presence notes](docs/PRESENCE.md).
+identified device-local `musicKit://` artwork in the reported trace. Discord
+requires public artwork: the app resolves catalog relationships from the Song
+object instead of treating library IDs as catalog IDs. Device confirmation is
+still needed for catalog resolution and Discord rendering; see [presence notes](docs/PRESENCE.md).
 
 ## Verification
 

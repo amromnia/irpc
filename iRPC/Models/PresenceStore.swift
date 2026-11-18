@@ -20,6 +20,13 @@ final class PresenceStore: ObservableObject {
     private var entryArtworkURL: URL?
     private var songArtworkURL: URL?
     private var publishing = false
+    @Published private(set) var controllingPlayback = false
+    private var currentSong: Song?
+    private var discordArtworkKey: String?
+    private var discordArtworkURL: URL?
+    private var discordArtworkCheckedAt = Date.distantPast
+    private var discordArtworkStatus = "Not checked"
+    private var sharingGeneration = 0
     @Published private(set) var sharing = false
     @Published private(set) var restoring = false
     @Published var error: String?
@@ -169,9 +176,10 @@ final class PresenceStore: ObservableObject {
             let current = try await music.getCurrentPlayback()
             let entryArtwork = SystemMusicPlayer.shared.queue.currentEntry?.artwork
             var songArtwork: Artwork?
+            currentSong = nil
             if let item = SystemMusicPlayer.shared.queue.currentEntry?.item {
                 switch item {
-                case .song(let song): songArtwork = song.artwork
+                case .song(let song): currentSong = song; songArtwork = song.artwork
                 case .musicVideo(let video): songArtwork = video.artwork
                 @unknown default: break
                 }
@@ -186,6 +194,7 @@ final class PresenceStore: ObservableObject {
             recentPlayback = false
             observedAt = Date()
         } catch NowPlayingError.noCurrentEntry {
+            currentSong = nil
             if !loadedHistory {
                 loadedHistory = true
                 let songs = try? await MHistory.recentlyPlayedSongs(limit: 1)
@@ -204,6 +213,36 @@ final class PresenceStore: ObservableObject {
         }
     }
 
+    /// Library artwork is a device resource. Resolve catalog relationships from
+    /// the Song itself; a library ID must not be sent to a catalog-ID endpoint.
+    private func resolveDiscordArtwork(force: Bool = false) async -> URL? {
+        let key = playback.id + "|" + (playback.artworkURL?.absoluteString ?? "")
+        if !force, key == discordArtworkKey,
+           Date().timeIntervalSince(discordArtworkCheckedAt) < (discordArtworkURL == nil ? 60 : 3600) {
+            return discordArtworkURL
+        }
+        var resolved = PublicArtworkPolicy.url(playback.artworkURL)
+        var status = resolved == nil ? "No catalog song available for this entry" : "Public MusicKit artwork"
+        if resolved == nil, let song = currentSong {
+            do {
+                let catalog = try await song.with([.albums], preferredSource: .catalog)
+                resolved = PublicArtworkPolicy.url(catalog.artwork?.url(width: 600, height: 600))
+                    ?? catalog.albums?.compactMap { PublicArtworkPolicy.url($0.artwork?.url(width: 600, height: 600)) }.first
+                status = resolved == nil ? "Catalog lookup supplied no public artwork" : "Public catalog artwork"
+            } catch {
+                let failure = error as NSError
+                status = "Catalog lookup failed: \(failure.domain) \(failure.code)"
+            }
+        }
+        // Do not replace diagnostics/cache for a song that changed during the lookup.
+        guard key == playback.id + "|" + (playback.artworkURL?.absoluteString ?? "") else { return nil }
+        discordArtworkKey = key
+        discordArtworkURL = resolved
+        discordArtworkStatus = status
+        discordArtworkCheckedAt = Date()
+        return resolved
+    }
+
     private func diagnosticURL(_ url: URL?) -> String? {
         guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         components.query = nil
@@ -218,26 +257,22 @@ final class PresenceStore: ObservableObject {
         checkingArtwork = true
         defer { checkingArtwork = false }
         await refreshPlayback()
+        let publicArtwork = await resolveDiscordArtwork(force: true)
         var lines = [
             "Track: \(playback.title) — \(playback.artist)",
             "Music authorization: \(MusicAuthorization.currentStatus)",
             "Queue-entry artwork URL: \(diagnosticURL(entryArtworkURL) ?? "nil")",
             "Song artwork URL: \(diagnosticURL(songArtworkURL) ?? "nil")",
-            "Native Artwork object: \(currentArtwork == nil ? "nil" : "present")"
+            "Native Artwork object: \(currentArtwork == nil ? "nil" : "present")",
+            "Discord artwork: \(discordArtworkStatus)",
+            "Discord image URL: \(diagnosticURL(publicArtwork) ?? "nil")"
         ]
-        guard let artwork = currentArtwork else {
-            lines.append("MusicKit did not supply an Artwork object for this entry/song.")
-            artworkDiagnostics = lines.joined(separator: "\n")
-            return
-        }
-        guard let url = artwork.url(width: 600, height: 600) else {
-            lines.append("Artwork.url(width:height:) returned nil. The native renderer is used directly.")
-            artworkDiagnostics = lines.joined(separator: "\n")
-            return
-        }
         lines.append("Renderer: MusicKit.ArtworkImage")
-        guard ["https", "http"].contains(url.scheme?.lowercased() ?? "") else {
-            lines.append("Native resource scheme: \(url.scheme ?? "nil"). A generic URLSession/AsyncImage path cannot be assumed.")
+        if entryArtworkURL?.scheme?.lowercased() == "musickit" {
+            lines.append("Local library artwork renders on this phone; Discord cannot fetch it.")
+        }
+        guard let url = publicArtwork else {
+            lines.append("No public image URL is currently available for Discord.")
             artworkDiagnostics = lines.joined(separator: "\n")
             return
         }
@@ -255,10 +290,44 @@ final class PresenceStore: ObservableObject {
         artworkDiagnostics = lines.joined(separator: "\n")
     }
 
-    func toggleSharing(minutes: Int) {
+    func togglePlaybackAndSharing(minutes: Int) async {
+        guard !controllingPlayback else { return }
+        controllingPlayback = true
+        defer { controllingPlayback = false }
         autoStartPolicy.suppress()
-        if sharing { stopSharing(); return }
-        startSharing(minutes: minutes)
+        let player = SystemMusicPlayer.shared
+        if sharing && player.state.playbackStatus == .playing {
+            player.pause()
+            stopSharing()
+            await refreshPlayback()
+            return
+        }
+        guard musicAuthorized, !readyAccounts.isEmpty else { return }
+        let generation = sharingGeneration
+        do {
+            if player.state.playbackStatus != .playing { try await player.play() }
+            guard generation == sharingGeneration, !Task.isCancelled else { return }
+            await refreshPlayback()
+            if !sharing { startSharing(minutes: minutes) }
+            else { try await poll() }
+        } catch {
+            self.error = "Couldn't resume Music. Choose a song in Apple Music and try again."
+        }
+    }
+
+    func skipTrack(previous: Bool) async {
+        guard !controllingPlayback, musicAuthorized else { return }
+        controllingPlayback = true
+        defer { controllingPlayback = false }
+        sharingGeneration += 1
+        let player = SystemMusicPlayer.shared
+        do {
+            if previous && player.playbackTime > 3 { player.playbackTime = 0 }
+            else if previous { try await player.skipToPreviousEntry() }
+            else { try await player.skipToNextEntry() }
+            await refreshPlayback()
+            if sharing { try await poll() }
+        } catch { self.error = "Couldn't change tracks. Check the queue in Apple Music." }
     }
 
     private func startSharing(minutes: Int) {
@@ -283,6 +352,7 @@ final class PresenceStore: ObservableObject {
     }
 
     func stopSharing() {
+        sharingGeneration += 1
         autoStartPolicy.suppress()
         UserDefaults.standard.set(false, forKey: "sharing.requested")
         sharing = false
@@ -377,6 +447,15 @@ final class PresenceStore: ObservableObject {
             return
         }
         guard hasFreshPlayback, !playback.id.isEmpty else { return }
+        let trackID = playback.id
+        let generation = sharingGeneration
+        let entryID = SystemMusicPlayer.shared.queue.currentEntry?.id
+        let publicArtwork = await resolveDiscordArtwork()
+        await refreshPlayback()
+        try Task.checkCancellation()
+        guard sharing, hasFreshPlayback, generation == sharingGeneration, playback.id == trackID,
+              entryID == SystemMusicPlayer.shared.queue.currentEntry?.id,
+              SystemMusicPlayer.shared.state.playbackStatus == .playing else { return }
         let snapshot = playback
         // Each account owns an SDK client and credentials. One Music sample is
         // delivered to every selected client independently.
@@ -387,7 +466,7 @@ final class PresenceStore: ObservableObject {
                     await account.discord.updateRichPresence(
                         id: snapshot.id, title: snapshot.title, artist: snapshot.artist,
                         duration: snapshot.duration, currentTime: snapshot.playbackTime,
-                        artworkURL: snapshot.artworkURL
+                        artworkURL: publicArtwork
                     )
                 }
             }

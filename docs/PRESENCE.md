@@ -41,9 +41,20 @@ non-HTTP native resources, HTTP failures, and image-decoding failures. Query str
 are removed from displayed/copied URLs. A successful diagnostic HTTP request still
 does not prove native rendering or Discord-side downloading succeeded.
 
-Discord uses a URL asset separately. The SDK wrapper prefers the MusicKit URL,
-then its cached/catalog artwork policy. Discord must fetch the image itself; an
-in-app success does not establish Discord reachability. Uploading your application
+Discord uses a public HTTPS URL separately. The reported `musicKit://artwork/library/…`
+URL is a device-local MusicKit resource, not an image Discord can download. The
+former SDK fallback incorrectly treated a playback/library ID as a catalog ID.
+The app now resolves the actual Song with `.with([.albums], preferredSource: .catalog)`
+and selects public song/album artwork. One cached result is shared by all accounts;
+failed lookups retry after a minute rather than once per account per poll. Library
+IDs are no longer passed to the wrapper's catalog-ID endpoint. This is an exact
+catalog relationship lookup, without a title-search guess or artwork upload.
+
+Diagnostics now include the public URL, catalog lookup status/error domain and
+code, and an HTTP/image-decoding probe of that public image. On-device resolution
+and Discord-side rendering still require verification with the updated build.
+Library-only uploads without a catalog match may have no public artwork. Discord
+must fetch the image itself; an in-app success does not establish Discord reachability. Uploading your application
 icon in the Developer Portal configures the app's default icon, including the
 question-mark case where no usable artwork is supplied.
 
@@ -92,3 +103,19 @@ cancels pending work. OS expiration cancels the current refresh operation.
 Auto-start on opening is separate: it attempts once per foreground visit after
 permissions/accounts are ready. A manual stop suppresses another attempt during
 that visit. Neither feature silently renews a continued-processing job.
+
+## Playback controls
+
+The main play button resumes the existing SystemMusicPlayer queue if paused and
+starts sharing. If Music is already playing, it starts sharing without restarting
+the song. While both playback and sharing are active, pause pauses Music and stops
+sharing. Automatic sharing on launch and background refresh never start playback.
+No replacement queue is created from recently played history; an empty queue needs
+a song chosen in Apple Music.
+
+Next skips to the next queue entry. Previous restarts the current entry after three
+seconds, otherwise skips to the previous entry. Track changes invalidate in-flight
+public-artwork publication so an earlier song cannot be posted after a skip.
+Device tests should cover queue ends, an empty queue, external pause/resume, and
+rapid play/pause/skip interactions. Motion options are previewed separately; native
+background/button animation is awaiting a design choice.

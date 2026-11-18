@@ -53,3 +53,7 @@ Account slots have no fixed count cap. Removing an account drops its SDK client
 on the serial callback queue. Callback contexts use weak manager references and
 SDK user-data free hooks, so removed accounts are not retained by status callbacks.
 Presence request buffers are released by their SDK free hook, including cancellation.
+
+The app now resolves public catalog artwork from MusicKit Song relationships once
+per sampled track. The wrapper no longer makes catalog-ID requests using playback
+IDs. It accepts public HTTPS artwork and retains its existing per-track URL cache.

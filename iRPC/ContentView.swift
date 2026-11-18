@@ -56,18 +56,31 @@ struct ContentView: View {
                     songDetails
                     if !store.playback.id.isEmpty { timeline }
                     VStack(spacing: 12) {
-                        Button { store.toggleSharing(minutes: sessionMinutes) } label: {
-                            Image(systemName: store.sharing ? "pause.fill" : "play.fill")
-                                .font(.system(size: 28, weight: .semibold))
-                                .frame(width: 78, height: 78)
-                                .foregroundStyle(.white)
-                                .background(accent, in: Circle())
+                        HStack(spacing: 34) {
+                            Button { Task { await store.skipTrack(previous: true) } } label: {
+                                Image(systemName: "backward.end.fill").font(.title2).frame(width: 44, height: 44)
+                            }
+                            .accessibilityLabel("Previous track or restart")
+                            .disabled(!store.musicAuthorized || store.playback.id.isEmpty || store.controllingPlayback)
+                            Button { Task { await store.togglePlaybackAndSharing(minutes: sessionMinutes) } } label: {
+                                Image(systemName: store.sharing && store.playing ? "pause.fill" : "play.fill")
+                                    .font(.system(size: 28, weight: .semibold))
+                                    .frame(width: 78, height: 78)
+                                    .foregroundStyle(.white)
+                                    .background(accent, in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(store.controllingPlayback || (!(store.sharing && store.playing) && (!store.musicAuthorized || store.readyAccounts.isEmpty)))
+                            .opacity(!store.sharing && store.readyAccounts.isEmpty ? 0.4 : 1)
+                            .accessibilityLabel(store.sharing && store.playing ? "Pause Music and stop sharing" : "Play Music and share")
+                            Button { Task { await store.skipTrack(previous: false) } } label: {
+                                Image(systemName: "forward.end.fill").font(.title2).frame(width: 44, height: 44)
+                            }
+                            .accessibilityLabel("Next track")
+                            .disabled(!store.musicAuthorized || store.playback.id.isEmpty || store.controllingPlayback)
                         }
                         .buttonStyle(.plain)
-                        .disabled(!store.sharing && (!store.musicAuthorized || store.readyAccounts.isEmpty))
-                        .opacity(!store.sharing && store.readyAccounts.isEmpty ? 0.4 : 1)
-                        .accessibilityLabel(store.sharing ? "Stop sharing" : "Start sharing")
-                        Text(store.sharing ? "Sharing · \(store.readyAccounts.count) accounts" : "Start sharing")
+                        Text(store.sharing ? "Sharing · \(store.readyAccounts.count) accounts" : "Play & share")
                             .font(.caption).foregroundStyle(.secondary)
                         if store.readyAccounts.isEmpty {
                             Button("Connect an account") { tab = 1 }.font(.subheadline)

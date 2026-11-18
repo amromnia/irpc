@@ -7,7 +7,6 @@
 
 import Combine
 import Foundation
-internal import MusadoraKit
 #if !IRPC_XTOOL
 import SwiftData
 #endif
@@ -475,16 +474,7 @@ public final class DiscordManager: ObservableObject {
         presenceStatus = "Preparing presence update…"
 
         // The system player already supplies artwork, including library-only tracks.
-        var image = PresenceTimeline.artwork(provided: artworkURL, cached: artworkCache[id])
-        if image == nil, !id.isEmpty {
-            do {
-                let song = try await MCatalog.song(id: MusicItemID(rawValue: id), fetch: [.albums])
-                image = PresenceTimeline.artwork(provided: song.artwork?.url(width: 600, height: 600),
-                                                cached: song.albums?.first?.artwork?.url(width: 600, height: 600))
-            } catch {
-                // Send metadata even if catalog lookup is unavailable.
-            }
-        }
+        let image = PresenceTimeline.artwork(provided: artworkURL, cached: artworkCache[id])
         guard generation == presenceGeneration, !Task.isCancelled, isAuthenticated, isRunning else { return }
 		var activity = Discord_Activity()
 		Discord_Activity_Init(&activity)
