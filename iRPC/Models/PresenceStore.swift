@@ -236,7 +236,7 @@ final class PresenceStore: ObservableObject {
                 Task { @MainActor in
                     guard let self else { return }
                     self.refreshPlaybackState(fromNotification: stateChanged)
-                    if self.sharing { try? await self.poll(force: true) }
+                    if self.sharing { try? await self.poll() }
                     else { await self.refreshPlayback() }
                 }
             }
@@ -285,14 +285,18 @@ final class PresenceStore: ObservableObject {
         readingPlayback = true
         defer { readingPlayback = false; updateLiveActivity() }
         do {
+            let entryID = SystemMusicPlayer.shared.queue.currentEntry?.id
             let current = try await music.getCurrentPlayback()
+            // Metadata and position must belong to the same queue snapshot.
+            guard entryID == SystemMusicPlayer.shared.queue.currentEntry?.id else { return }
             let entryArtwork = SystemMusicPlayer.shared.queue.currentEntry?.artwork
             var songArtwork: Artwork?
+            var nativeDuration: TimeInterval?
             currentSong = nil
             if let item = SystemMusicPlayer.shared.queue.currentEntry?.item {
                 switch item {
-                case .song(let song): currentSong = song; songArtwork = song.artwork
-                case .musicVideo(let video): songArtwork = video.artwork
+                case .song(let song): currentSong = song; songArtwork = song.artwork; nativeDuration = song.duration
+                case .musicVideo(let video): songArtwork = video.artwork; nativeDuration = video.duration
                 @unknown default: break
                 }
             }
@@ -300,8 +304,15 @@ final class PresenceStore: ObservableObject {
             entryArtworkURL = entryArtwork?.url(width: 600, height: 600)
             songArtworkURL = songArtwork?.url(width: 600, height: 600)
             let resolvedURL = entryArtworkURL ?? songArtworkURL
+            // NowPlayingKit substitutes 1 second when duration is absent. Read
+            // the actual native optional and a metadata-matched library item.
+            let libraryItem = mediaPlayer.nowPlayingItem
+            let matchedDuration = libraryItem?.title == current.title && libraryItem?.artist == current.artist
+                ? libraryItem?.playbackDuration : nil
+            let duration = [nativeDuration, matchedDuration].compactMap { $0 }
+                .first { $0.isFinite && $0 > 0 } ?? 0
             playback = NowPlayingData(id: current.id, title: current.title, artist: current.artist,
-                album: current.album, artworkURL: resolvedURL, playbackTime: current.playbackTime, duration: current.duration)
+                album: current.album, artworkURL: resolvedURL, playbackTime: current.playbackTime, duration: duration)
             hasFreshPlayback = true
             observedAt = Date()
             if artworkColorTrack != current.id {
@@ -436,7 +447,7 @@ final class PresenceStore: ObservableObject {
                 guard !Task.isCancelled, self.artworkRequestKey == key else { return }
                 self.artworkRequestKey = nil
                 self.artworkResolution = nil
-                if self.sharing, key == self.artworkCacheKey { try? await self.poll(force: true) }
+                if self.sharing, key == self.artworkCacheKey { try? await self.poll() }
             }
         }
         return nil
@@ -465,6 +476,7 @@ final class PresenceStore: ObservableObject {
             "Playback store ID: \(playbackStoreID ?? "nil")",
             "App bundle: \(Bundle.main.bundleIdentifier ?? "nil")",
             "Discord SDK: \(DiscordManager.sdkVersion)",
+            "Discord timing: \(readyAccounts.first?.discord.timingDiagnostics ?? "No active account")",
             "Music authorization: \(MusicAuthorization.currentStatus)",
             "Playback UI: \(playing ? "playing" : "paused")",
             "MediaPlayer state: \(mediaPlayer.playbackState.rawValue)",
@@ -692,7 +704,8 @@ final class PresenceStore: ObservableObject {
         let publishKey = trackKey + "\u{1F}" + (publicArtwork?.absoluteString ?? "")
             + "\u{1F}" + readyAccounts.map { String($0.id) }.joined(separator: ",")
         guard presenceUpdates.shouldPublish(track: publishKey, now: ProcessInfo.processInfo.systemUptime,
-                                            interval: Double(pollingSeconds), force: force) else { return }
+                                            interval: Double(pollingSeconds), force: force,
+                                            position: playback.playbackTime, duration: playback.duration) else { return }
         let snapshot = playback
         let generation = sharingGeneration
         // Each account owns an SDK client and credentials. One Music sample is

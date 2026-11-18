@@ -40,8 +40,8 @@ def verify(path):
         assert info["PresenceDiscordApplicationID"] == identity["DISCORD_APPLICATION_ID"]
         assert info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["discord-" + identity["DISCORD_APPLICATION_ID"]]
         assert info["MinimumOSVersion"] == "17.6"
-        assert info["CFBundleShortVersionString"] == "1.8"
-        assert info["CFBundleVersion"] == "9"
+        assert info["CFBundleShortVersionString"] == "1.9"
+        assert info["CFBundleVersion"] == "10"
         assert info["NSSupportsLiveActivities"] is True
         assert info["CADisableMinimumFrameDurationOnPhone"] is True
         status_prefix = prefix + "PlugIns/AfterglowStatus.appex/"

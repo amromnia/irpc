@@ -183,7 +183,7 @@ Multi-account OAuth/live presence and visual behavior remain device tests.
 
 ## 1.1: native motion and Live Activity extension
 
-Both application targets embed `AfterglowStatus.appex`. Version/build are 1.8/9
+Both application targets embed `AfterglowStatus.appex`. Version/build are 1.9/10
 for app and extension. The unsigned WSL configuration propagates
 `CODE_SIGNING_ALLOWED = NO` through the generated xcconfig, including the embedded
 extension; ordinary configuration omits that override. The bundle verifier checks
@@ -273,3 +273,16 @@ SHA-256: `f06efe66f23a19ed405e7ea8752030c57eff168b74fa232d656c0e2a47576bac`.
 Live device tests remain for fresh/restored Discord login, simultaneous accounts,
 Listening rendering, and track transitions. Native Xcode/macOS and simulator
 execution were not run here.
+
+## 1.9: Listening timing and migration cleanup
+
+The focused start/end-range regression first failed on the missing start value.
+After correction, timeline, transition, hydration/seek publication, and playback
+state checks passed. The local unsigned release build and IPA verification also
+passed for app/extension 1.9/build 10 with pinned Discord SDK 1.11.24259.
+Output: `build/Afterglow-1.9-unsigned.ipa`.
+
+SHA-256: `8af17c10724a64d0bf6b9d566339a81d65145ebcdf2ebd157f1a86225d520c26`.
+Real-device rendering, timing hydration, seek/repeat, and end-of-track transitions
+remain device checks. Diagnostics now report sample duration/position and the
+outbound timestamp range for investigating any remaining client-specific issue.

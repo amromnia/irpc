@@ -46,6 +46,7 @@ public final class DiscordManager: ObservableObject {
     public var trackTransitionSeconds: TimeInterval = 30
     private var presenceGeneration = 0
     private var presenceExpiry: Task<Void, Never>?
+    @Published public private(set) var timingDiagnostics = "No timing sample"
     @Published public private(set) var presenceStatus = "No presence update sent yet."
     @Published public private(set) var lastPresenceAcknowledgedAt: Date?
 
@@ -68,37 +69,13 @@ public final class DiscordManager: ObservableObject {
 	}
 	private var cachedUserData: UserData?
 
-	public func startPresenceUpdates() {
-		print("🎮 Starting Discord Rich Presence")
-		isRunning = true
-		Task { @MainActor in
-			await startUpdates()
-		}
-	}
+    // PresenceStore owns playback samples and publication scheduling.
+    public func startPresenceUpdates() { isRunning = true }
 
-	public func stopPresenceUpdates() {
-		print("🛑 Stopping Discord Rich Presence")
-		isRunning = false
-		Task { @MainActor in
-			await stopUpdates()
-		}
-	}
-
-	private var updateTimer: Timer?
-	private var lastId: String = ""
-	private var lastTitle: String = ""
-	private var lastArtist: String = ""
-	private var lastArtwork: URL? = nil
-	private var lastDuration: TimeInterval = 0
-	private var lastCurrentTime: TimeInterval = 0
-
-	private var currentPlaybackInfo:
-		(
-			id: String, title: String, artist: String, duration: TimeInterval,
-			currentTime: TimeInterval,
-			artworkURL: URL?
-		)? = nil
-	private let presenceUpdateInterval: TimeInterval = 15
+    public func stopPresenceUpdates() {
+        isRunning = false
+        clearRichPresence()
+    }
 
 	private func fetchUserInfo() {
 		guard let client = getClient() else { return }
@@ -467,6 +444,7 @@ public final class DiscordManager: ObservableObject {
         guard !Task.isCancelled, isAuthenticated, isRunning, !title.isEmpty, !artist.isEmpty else { return }
         let times = timeline.timestamps(id: id, duration: duration, position: currentTime,
                                         now: Date().timeIntervalSince1970)
+        timingDiagnostics = "Sample duration: \(duration), position: \(currentTime)"
         if let end = times.end, Double(end) / 1000 <= Date().timeIntervalSince1970 {
             waitForNextTrack()
             return
@@ -475,7 +453,7 @@ public final class DiscordManager: ObservableObject {
         let image = PresenceTimeline.artwork(provided: artworkURL, cached: nil)
         lastPresence = (title, artist, image)
         sendRichPresence(title: title, state: "by \(artist)", image: image,
-                         imageText: "\(title) by \(artist)", end: times.end,
+                         imageText: "\(title) by \(artist)", start: times.start, end: times.end,
                          expiresAt: times.end.map { Double($0) / 1000 }, clearOnExpiry: false)
     }
 
@@ -487,11 +465,11 @@ public final class DiscordManager: ObservableObject {
         else { return }
         sendRichPresence(title: "Waiting for next track", state: lastPresence.title + " — " + lastPresence.artist,
                          image: lastPresence.artwork, imageText: lastPresence.title + " by " + lastPresence.artist,
-                         end: nil, expiresAt: transition.deadline, clearOnExpiry: true)
+                         start: nil, end: nil, expiresAt: transition.deadline, clearOnExpiry: true)
     }
 
     private func sendRichPresence(title: String, state: String, image: URL?, imageText: String,
-                                  end: UInt64?, expiresAt: TimeInterval?, clearOnExpiry: Bool) {
+                                  start: UInt64?, end: UInt64?, expiresAt: TimeInterval?, clearOnExpiry: Bool) {
         guard isAuthenticated, isRunning, let client = getClient() else { return }
         presenceGeneration += 1
         let generation = presenceGeneration
@@ -500,6 +478,7 @@ public final class DiscordManager: ObservableObject {
         presenceStatus = "Preparing presence update…"
 		var activity = Discord_Activity()
 		Discord_Activity_Init(&activity)
+        defer { Discord_Activity_Drop(&activity) }
 
 		// Set activity type first
 		Discord_Activity_SetType(&activity, Discord_ActivityTypes_Listening)
@@ -507,6 +486,7 @@ public final class DiscordManager: ObservableObject {
 		// Set up asset
 		var assets = Discord_ActivityAssets()
 		Discord_ActivityAssets_Init(&assets)
+        defer { Discord_ActivityAssets_Drop(&assets) }
 
         var imagePtr: UnsafeMutablePointer<UInt8>?
         var imageTextPtr: UnsafeMutablePointer<UInt8>?
@@ -552,8 +532,10 @@ public final class DiscordManager: ObservableObject {
 		// Set timestamps safely
 		var timestamps = Discord_ActivityTimestamps()
 		Discord_ActivityTimestamps_Init(&timestamps)
+        defer { Discord_ActivityTimestamps_Drop(&timestamps) }
 
-        if let end {
+        if let start, let end {
+            Discord_ActivityTimestamps_SetStart(&timestamps, start)
             Discord_ActivityTimestamps_SetEnd(&timestamps, end)
             Discord_Activity_SetTimestamps(&activity, &timestamps)
         }
@@ -571,6 +553,7 @@ public final class DiscordManager: ObservableObject {
 		let contextPtr = UnsafeMutablePointer<RichPresenceContext>.allocate(capacity: 1)
 		contextPtr.initialize(to: context)
 
+        timingDiagnostics += "\nPayload start(ms): \(start.map(String.init) ?? "nil"), end(ms): \(end.map(String.init) ?? "nil")"
         presenceStatus = "Waiting for Discord acknowledgement…"
 		print("🎵 Sending activity update to Discord...")
 		Discord_Client_UpdateRichPresence(
@@ -586,22 +569,6 @@ public final class DiscordManager: ObservableObject {
                 else { self.waitForNextTrack() }
             }
         }
-	}
-
-	public func updateCurrentPlayback(
-		id: String,
-		title: String,
-		artist: String,
-		duration: TimeInterval,
-		currentTime: TimeInterval,
-		artworkURL: URL?
-	) {
-		currentPlaybackInfo = (id, title, artist, duration, currentTime, artworkURL)
-	}
-
-	public func clearPlayback() {
-		currentPlaybackInfo = nil
-		clearRichPresence()
 	}
 
 	private func makeStringBuffer(from string: String) -> (
@@ -637,82 +604,6 @@ public final class DiscordManager: ObservableObject {
             return nil
         }
     }
-
-	private func refreshRichPresence() {
-		Task {
-			await updateRichPresence(
-				id: lastId,
-				title: lastTitle,
-				artist: lastArtist,
-				duration: lastDuration,
-				currentTime: lastCurrentTime,
-				artworkURL: lastArtwork
-			)
-		}
-	}
-
-	private func stopUpdates() async {
-		print("⏹️ Stopping presence updates")
-		// Stop timer first
-		updateTimer?.invalidate()
-		updateTimer = nil
-
-		// Clear state
-		currentPlaybackInfo = nil
-		lastTitle = ""
-		lastArtist = ""
-		lastArtwork = nil
-		lastDuration = 0
-		lastCurrentTime = 0
-
-		// Clear presence last
-		clearRichPresence()
-	}
-
-	private func startUpdates() async {
-		await stopUpdates()  // Clear any existing timer first
-
-		print("▶️ Starting presence updates")
-
-		// Perform an immediate update if we have playback info
-		if let info = self.currentPlaybackInfo,
-			self.isAuthenticated,
-			self.isReady,
-			self.isRunning
-		{
-			print("⚡ Performing immediate presence update")
-			await self.updateRichPresence(
-				id: info.id,
-				title: info.title,
-				artist: info.artist,
-				duration: info.duration,
-				currentTime: info.currentTime,
-				artworkURL: info.artworkURL
-			)
-		}
-
-		// Set up timer for periodic updates
-		updateTimer = Timer.scheduledTimer(withTimeInterval: presenceUpdateInterval, repeats: true)
-		{ [weak self] _ in
-			guard let self = self else { return }
-			Task { @MainActor in
-				guard let info = self.currentPlaybackInfo,
-					self.isAuthenticated,
-					self.isReady,
-					self.isRunning
-				else { return }
-
-				await self.updateRichPresence(
-					id: info.id,
-					title: info.title,
-					artist: info.artist,
-					duration: info.duration,
-					currentTime: info.currentTime,
-					artworkURL: info.artworkURL
-				)
-			}
-		}
-	}
 
 	private func handleError(_ message: String) {
 		DispatchQueue.main.async {
@@ -947,8 +838,6 @@ public final class DiscordManager: ObservableObject {
         acceptsTokenUpdates = false
         presenceGeneration += 1
         isRunning = false
-        updateTimer?.invalidate()
-        updateTimer = nil
         clientLock.lock()
         let client = _client
         _client = nil

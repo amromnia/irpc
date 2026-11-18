@@ -15,7 +15,7 @@ Focused changes:
 - The explicit `IRPC_XTOOL=1` manifest setting defines `IRPC_XTOOL` for this package.
   The portable build uses a Codable token record and `KeychainTokenStorage`.
   SwiftData model/macros/exports are excluded from that build.
-- Expiry, refresh thresholds, and OAuth/Rich Presence interfaces are preserved.
+- Token expiry, refresh thresholds, and OAuth interfaces are preserved.
   Token exchange results are checked before storage; failed writes abort login.
   Sign-out deletes credentials, disconnects, and rejects late token writes until
   another authorization is started.
@@ -84,3 +84,13 @@ per sampled track. The wrapper no longer makes catalog-ID requests using playbac
 IDs. It accepts the supplied public HTTPS artwork. The app owns metadata-based
 resolution/caching; a missing URL no longer reuses an image by an ambiguous
 library ID.
+
+## Listening timing (app 1.9)
+
+Valid Listening activity carries both start/end timestamps in milliseconds;
+unknown timing and the bounded next-track waiting state carry neither. The app
+owns sampling and resend policy. Unused `updateCurrentPlayback`/`clearPlayback`
+cache APIs and their legacy Timer path are removed. `startPresenceUpdates` only
+enables publication, and stop clears synchronously. SDK activity, asset, and
+timestamp objects are dropped after submission according to the official C++
+wrapper's ownership behavior. SDK binaries are unchanged by this cleanup.

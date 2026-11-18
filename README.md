@@ -111,7 +111,7 @@ artist, countdown, and sharing status on the Lock Screen / Dynamic Island. Tap i
 to reopen the app. It does not extend background execution. Status becomes stale
 after 90 seconds without an update, and respects user dismissal for that session.
 It is a Live Activity, not a Home Screen widget, and needs no App Group or push
-server. About contains only the app version. This release is **1.8, build 9**.
+server. About contains only the app version. This release is **1.9, build 10**.
 
 ## Background behavior and artwork
 
@@ -254,3 +254,15 @@ user API, releases owned metadata strings/handles, and requests animated avatars
 with a PNG static format. Artwork diagnostics include the runtime SDK version.
 The IPA verifier checks the embedded SDK against its pinned release hash.
 Listening activity and the bounded waiting state remain enabled.
+
+## 1.9 Listening timing
+
+Listening activities now carry both start/end timestamps for Discord's music
+progress display. Missing native duration no longer becomes a one-second song;
+metadata remains visible without a timer until timing is available. Duration
+hydration and seek/repeat corrections bypass the unchanged-update interval.
+Track/position snapshots are checked for queue changes, and impossible positions
+are not sent as expired timers. Waiting presence remains timestamp-free.
+Artwork diagnostics include sampled and outgoing Discord timing values.
+The unused wrapper playback cache and duplicate 15-second timer are removed;
+PresenceStore is the sole publisher. Explicit stop now clears synchronously.

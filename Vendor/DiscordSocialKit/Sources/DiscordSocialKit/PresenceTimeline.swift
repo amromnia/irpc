@@ -8,7 +8,10 @@ struct PresenceTimeline {
 
     mutating func timestamps(id: String, duration: TimeInterval, position: TimeInterval,
                              now: TimeInterval) -> (start: UInt64?, end: UInt64?) {
-        let position = position.isFinite ? max(0, position) : 0
+        // Do not invent a position/duration while Music is hydrating, or pair
+        // a new track with an out-of-range time left over from the previous one.
+        guard duration.isFinite, duration > 0, position.isFinite,
+              position >= 0, position <= duration else { return (nil, nil) }
         if track != id || abs(position - sampledPosition) >= 0.5 {
             track = id
             sampledPosition = position
@@ -16,10 +19,11 @@ struct PresenceTimeline {
         }
         // Identical samples never move the deadline, even after it has expired.
         // Only a new track, seek, or advancing player sample can correct it.
-        guard duration.isFinite, duration > 0 else { return (nil, nil) }
-        let end = max(0, sampledAt + max(0, duration - sampledPosition))
-        // End-only timestamps avoid Discord falling back to an elapsed counter.
-        return (nil, UInt64(end * 1000))
+        let start = max(0, sampledAt - sampledPosition)
+        let end = start + duration
+        // Listening uses both endpoints for a complete music progress range.
+        // Expiry switches to a timestamp-free waiting card, not a count-up.
+        return (UInt64(start * 1000), UInt64(end * 1000))
     }
 
     mutating func reset() { track = nil }

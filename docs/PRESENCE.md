@@ -314,3 +314,38 @@ so countdown values retain that unit. IPA verification pins the embedded SDK's
 hash to `Vendor/DiscordSocialKit/SDK.json`. Native Discord login, simultaneous
 accounts, Listening rendering, and track transition behavior still need a phone
 test; compiling and inspecting the IPA cannot prove live service behavior.
+
+## 1.9: Listening timestamp range and timing hydration
+
+The 1.6 end-only range was retained when 1.7/1.8 enabled Listening. Discord's
+Listening/Watching progress UI supports a complete start/end range; the focused
+regression failed because start was absent. Known durations now send a pair in
+milliseconds, with `end - start` equal to song duration. Stale observations keep
+both original endpoints, and expiry still replaces them with a timestamp-free
+waiting card. Unknown duration/invalid position sends neither endpoint.
+
+NowPlayingKit's `song.duration ?? 1` must not become a one-second timer, so the
+app reads the actual native optional and a metadata-matched MediaPlayer duration
+(otherwise zero/unknown). Sampling checks queue entry identity before/after
+reading. Positions outside song duration are not converted into immediate expiry.
+The publication policy bypasses the resend interval when duration hydrates or
+playback position is corrected by seek/repeat. Normal progress remains throttled.
+Artwork diagnostics include sampled timing and outgoing timestamps.
+
+Migration cleanup: the wrapper's unused cached-playback API, cached last-track
+fields, legacy 15-second Timer, and duplicate refresh path are removed. No app
+callers used them; PresenceStore is the sole playback/publication scheduler.
+Explicit stop clears synchronously. Native notifications and artwork completion
+now trigger a sample without forcing unchanged data through the publication gate;
+actual metadata/timing changes still publish immediately. SDK activity/assets/timestamp objects are
+dropped after submission, matching the official C++ value-object ownership.
+Album artwork, presence-only OAuth scopes, callback pump, background sampling,
+and bounded waiting still apply to Listening and remain in use. Waiting cards
+continue to have no timestamps; ordinary updates now always supply the complete
+range when valid. No Spotify-only flags or unsupported card styling are added.
+
+Checks cover complete ranges, seeks, repeat, invalid positions, duration hydration,
+correction publication, fixed expiry, and bounded waiting. Discord's actual UI
+may show elapsed/total time in its Listening time bar; the app does not control
+which labels the receiving client renders. Local tests cannot verify that UI.
+Source: https://github.com/discord/discord-api-docs/blob/main/developers/events/gateway-events.mdx#activity-timestamps
