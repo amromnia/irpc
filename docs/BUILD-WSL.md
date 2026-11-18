@@ -181,7 +181,7 @@ Multi-account OAuth/live presence and visual behavior remain device tests.
 
 ## 1.1: native motion and Live Activity extension
 
-Both application targets embed `AfterglowStatus.appex`. Version/build are 1.3/4
+Both application targets embed `AfterglowStatus.appex`. Version/build are 1.4/5
 for app and extension. The unsigned WSL configuration propagates
 `CODE_SIGNING_ALLOWED = NO` through the generated xcconfig, including the embedded
 extension; ordinary configuration omits that override. The bundle verifier checks
@@ -213,3 +213,10 @@ measures optimized solver/image-data work; the existing vapor check also runs wi
 `swiftc -O -sanitize=address iRPC/Models/VaporSimulation.swift tests/vapor-check.swift`.
 The app plist enables custom display-link timing hints. Actual playback notification
 delivery, animation frame rate, and power use require device validation.
+
+## 1.4: startup readiness
+
+The unsigned app and embedded extension report version 1.4/build 5. The playback
+state regression check now includes cold-launch state seeding and precedence of
+subsequent native notifications. Startup UI/permission timing still needs a device
+check with a song already playing before launching the app.

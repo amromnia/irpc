@@ -10,7 +10,9 @@ import UIKit
 final class PresenceStore: ObservableObject {
     @Published private(set) var accounts: [DiscordAccount] = []
     @Published private(set) var playback = NowPlayingData(id: "", title: "Not playing", artist: "")
-    @Published private(set) var musicAuthorized = MusicAuthorization.currentStatus == .authorized
+    @Published private(set) var musicAuthorized = false
+    @Published private(set) var musicAccessChecked = false
+    @Published private(set) var isInitializing = true
     @Published private(set) var playing = false
     @Published private(set) var observedAt = Date()
     @Published private(set) var currentArtwork: Artwork?
@@ -157,47 +159,94 @@ final class PresenceStore: ObservableObject {
     func start() async {
         guard !started else { return }
         started = true
+        isInitializing = true
         restoring = true
+        defer { restoring = false; isInitializing = false; tryAutoStart() }
+        // Resolve permission before drawing an access prompt. The two native
+        // permission providers can hydrate at different times on cold launch.
+        for attempt in 0..<6 {
+            refreshPlaybackState()
+            if MusicAuthorization.currentStatus != .notDetermined || MPMediaLibrary.authorizationStatus() != .notDetermined { break }
+            if attempt < 5 { try? await Task.sleep(nanoseconds: 100_000_000) }
+        }
+        musicAccessChecked = true
+        await settleInitialPlayback()
         for account in accounts { await account.restore() }
-        restoring = false
+        await waitForAccountRestoration()
         await refreshPlayback()
-        tryAutoStart()
+    }
+
+    private func waitForAccountRestoration() async {
+        let savedAccounts = accounts.filter { (try? $0.discord.hasStoredToken()) == true }
+        // SDK restore returns before its connection callback. Keep the loader
+        // through that handshake, with a bound for unavailable networks/accounts.
+        for _ in 0..<30 {
+            if savedAccounts.allSatisfy({ $0.discord.isReady || $0.discord.errorMessage != nil || $0.storageError != nil }) { break }
+            if Task.isCancelled { return }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+
+    private var currentMusicAccess: Bool {
+        let status = MusicAuthorization.currentStatus
+        return status == .authorized || (status == .notDetermined && MPMediaLibrary.authorizationStatus() == .authorized)
+    }
+
+    private func settleInitialPlayback() async {
+        guard musicAuthorized else { return }
+        // Give the native player service a run-loop turn before accepting its
+        // first snapshot; this does not prepare, start, or interrupt audio.
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        for _ in 0..<10 {
+            await refreshPlayback()
+            if hasFreshPlayback || (!playing && (mediaPlayer.playbackState != .stopped || SystemMusicPlayer.shared.state.playbackStatus != .stopped)) { break }
+            if Task.isCancelled { return }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
     }
 
     func requestMusicAccess() async {
+        guard !isInitializing else { return }
+        isInitializing = true
+        defer { isInitializing = false; tryAutoStart() }
         musicAuthorized = await music.authorize() == .authorized
-        if musicAuthorized { error = nil; await refreshPlayback(); tryAutoStart() }
+        musicAccessChecked = true
+        if musicAuthorized { error = nil; await settleInitialPlayback() }
         else { error = "Allow Music access in Settings to share what you're listening to." }
     }
 
     func connect(_ account: DiscordAccount) {
-        guard !authorizing, account.storageError == nil else { return }
+        guard !isInitializing, !authorizing, account.storageError == nil else { return }
         error = nil
         duplicateRejections.remove(account.id)
         account.discord.authorize()
     }
 
     private func observePlayback() {
-        guard !playbackNotificationsStarted, MusicAuthorization.currentStatus == .authorized else { return }
+        guard !playbackNotificationsStarted, currentMusicAccess else { return }
         playbackNotificationsStarted = true
         mediaPlayer.beginGeneratingPlaybackNotifications()
         NotificationCenter.default.publisher(for: .MPMusicPlayerControllerPlaybackStateDidChange)
             .merge(with: NotificationCenter.default.publisher(for: .MPMusicPlayerControllerNowPlayingItemDidChange))
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                Task { @MainActor in self?.refreshPlaybackState() }
+            .sink { [weak self] notification in
+                let stateChanged = notification.name == .MPMusicPlayerControllerPlaybackStateDidChange
+                Task { @MainActor in self?.refreshPlaybackState(fromNotification: stateChanged) }
             }
             .store(in: &playbackObservations)
     }
 
-    func refreshPlaybackState() {
-        let authorized = MusicAuthorization.currentStatus == .authorized
+    func refreshPlaybackState(fromNotification: Bool = false) {
+        let authorized = currentMusicAccess
         if musicAuthorized != authorized { musicAuthorized = authorized }
         if authorized {
             observePlayback()
             let state = mediaPlayer.playbackState
+            let initialPlaying = SystemMusicPlayer.shared.state.playbackStatus == .playing
             playbackPresentation.observe(playing: state == .playing || state == .seekingForward || state == .seekingBackward,
-                                         now: ProcessInfo.processInfo.systemUptime)
+                                         now: ProcessInfo.processInfo.systemUptime,
+                                         initialMusicKitPlaying: initialPlaying,
+                                         mediaStateKnown: fromNotification || state == .playing || state == .seekingForward || state == .seekingBackward || (!initialPlaying && state != .stopped))
         } else { playbackPresentation.reset() }
         if playing != playbackPresentation.playing {
             playing = playbackPresentation.playing
@@ -220,8 +269,11 @@ final class PresenceStore: ObservableObject {
     func refreshPlayback() async {
         refreshPlaybackState()
         guard !readingPlayback else { return }
-        musicAuthorized = MusicAuthorization.currentStatus == .authorized
+        musicAuthorized = currentMusicAccess
         guard musicAuthorized else { playing = false; return }
+        // Media-library permission can hydrate before MusicKit's permission
+        // snapshot. Do not turn that brief mismatch into an access error.
+        guard MusicAuthorization.currentStatus == .authorized else { return }
         hasFreshPlayback = false
         readingPlayback = true
         defer { readingPlayback = false; updateLiveActivity() }
@@ -416,13 +468,13 @@ final class PresenceStore: ObservableObject {
     }
 
     func togglePlaybackAndSharing(minutes: Int) async {
-        guard !controllingPlayback else { return }
+        guard !isInitializing, !controllingPlayback else { return }
         controllingPlayback = true
         defer { controllingPlayback = false }
         autoStartPolicy.suppress()
         let player = SystemMusicPlayer.shared
         refreshPlaybackState()
-        if sharing && playing {
+        if playing {
             player.pause()
             playbackCommandAccepted(playing: false)
             stopSharing()
@@ -444,7 +496,7 @@ final class PresenceStore: ObservableObject {
     }
 
     func skipTrack(previous: Bool) async {
-        guard !controllingPlayback, musicAuthorized else { return }
+        guard !isInitializing, !controllingPlayback, musicAuthorized else { return }
         controllingPlayback = true
         defer { controllingPlayback = false }
         sharingGeneration += 1
@@ -456,6 +508,12 @@ final class PresenceStore: ObservableObject {
             await refreshPlayback()
             if sharing { try await poll() }
         } catch { self.error = "Couldn't change tracks. Check the queue in Apple Music." }
+    }
+
+    func shareCurrentPlayback(minutes: Int) {
+        guard !isInitializing, playing, !sharing else { return }
+        autoStartPolicy.suppress()
+        startSharing(minutes: minutes)
     }
 
     private func startSharing(minutes: Int) {
@@ -502,10 +560,17 @@ final class PresenceStore: ObservableObject {
         }
     }
 
-    func enteredForeground() {
-        updateLiveActivity()
+    func enteredForeground(recheck: Bool = true) async {
         autoStartPolicy.enterForeground()
-        tryAutoStart()
+        guard !isInitializing else { return }
+        guard recheck else { tryAutoStart(); return }
+        isInitializing = true
+        defer { isInitializing = false; tryAutoStart() }
+        refreshPlaybackState()
+        musicAccessChecked = true
+        await settleInitialPlayback()
+        await waitForAccountRestoration()
+        updateLiveActivity()
     }
 
     func enteredBackground() {
@@ -515,7 +580,7 @@ final class PresenceStore: ObservableObject {
     }
 
     private func tryAutoStart() {
-        guard UIApplication.shared.applicationState == .active, !BackgroundController.shared.isRunning,
+        guard !isInitializing, musicAccessChecked, UIApplication.shared.applicationState == .active, !BackgroundController.shared.isRunning,
               autoStartPolicy.claim(enabled: autoStart, ready: !readyAccounts.isEmpty, authorized: musicAuthorized) else { return }
         let stored = UserDefaults.standard.integer(forKey: "presence.sessionMinutes")
         startSharing(minutes: [30, 120, 240].contains(stored) ? stored : 120)

@@ -49,14 +49,14 @@ struct ContentView: View {
         .tint(accent)
         .preferredColorScheme(appearance == 0 ? nil : (appearance == 1 ? .light : .dark))
         .sheet(item: $selectedAccount) { account in
-            AccountDetailsView(account: account, accent: accent, authorizing: store.authorizing,
+            AccountDetailsView(account: account, accent: accent, authorizing: store.authorizing || store.isInitializing,
                 connect: { store.connect(account) }, remove: {
                     if store.removeAccount(account) { selectedAccount = nil }
                 })
         }
         .task {
             await store.start()
-            if scenePhase == .active { store.enteredForeground() }
+            if scenePhase == .active { await store.enteredForeground(recheck: false) }
             while !Task.isCancelled {
                 store.refreshPlaybackState()
                 await store.tick()
@@ -65,7 +65,7 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { store.enteredBackground() }
-            if phase == .active { store.enteredForeground(); Task { await store.refreshPlayback() } }
+            if phase == .active { Task { await store.enteredForeground() } }
         }
     }
 
@@ -73,12 +73,12 @@ struct ContentView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 25) {
-                    if !store.musicAuthorized {
+                    if !store.isInitializing && store.musicAccessChecked && !store.musicAuthorized {
                         Button("Allow Music access") { Task { await store.requestMusicAccess() } }
                             .buttonStyle(.borderedProminent)
                     }
                     artwork
-                    songDetails
+                    songDetails.redacted(reason: store.isInitializing ? .placeholder : [])
                     if !store.playback.id.isEmpty { timeline }
                     VStack(spacing: 12) {
                         HStack(spacing: 34) {
@@ -86,32 +86,47 @@ struct ContentView: View {
                                 Image(systemName: "backward.end.fill").font(.title2).frame(width: 44, height: 44)
                             }
                             .accessibilityLabel("Previous track or restart")
-                            .disabled(!store.musicAuthorized || store.playback.id.isEmpty || store.controllingPlayback)
+                            .disabled(store.isInitializing || !store.musicAuthorized || store.playback.id.isEmpty || store.controllingPlayback)
                             Button { feedback(); Task { await store.togglePlaybackAndSharing(minutes: sessionMinutes) } } label: {
-                                PlaybackSymbol(playing: store.sharing && store.playing, animated: animateButtons)
+                                Group {
+                                    if store.isInitializing {
+                                        ProgressView().tint(.white).accessibilityLabel("Loading Music")
+                                    } else {
+                                        PlaybackSymbol(playing: store.playing, animated: animateButtons)
+                                    }
+                                }
                                     .font(.system(size: 28, weight: .semibold))
                                     .frame(width: 78, height: 78)
                                     .foregroundStyle(.white)
                                     .background(accent, in: Circle())
                             }
-                            .disabled(store.controllingPlayback || (!(store.sharing && store.playing) && (!store.musicAuthorized || store.readyAccounts.isEmpty)))
-                            .opacity(!store.sharing && store.readyAccounts.isEmpty ? 0.4 : 1)
-                            .accessibilityLabel(store.sharing && store.playing ? "Pause Music and stop sharing" : "Play Music and share")
+                            .disabled(store.isInitializing || store.controllingPlayback || !store.musicAuthorized || (!store.playing && store.readyAccounts.isEmpty))
+                            .opacity(!store.isInitializing && !store.playing && store.readyAccounts.isEmpty ? 0.4 : 1)
+                            .accessibilityLabel(store.isInitializing ? "Loading Music" : (store.playing ? "Pause Music and stop sharing" : "Play Music and share"))
                             Button { feedback(); Task { await store.skipTrack(previous: false) } } label: {
                                 Image(systemName: "forward.end.fill").font(.title2).frame(width: 44, height: 44)
                             }
                             .accessibilityLabel("Next track")
-                            .disabled(!store.musicAuthorized || store.playback.id.isEmpty || store.controllingPlayback)
+                            .disabled(store.isInitializing || !store.musicAuthorized || store.playback.id.isEmpty || store.controllingPlayback)
                         }
                         .buttonStyle(PlaybackButtonStyle(animated: animateButtons))
-                        Text(store.sharing ? "Sharing · \(store.readyAccounts.count) \(store.readyAccounts.count == 1 ? "account" : "accounts")" : "Play & share")
-                            .font(.caption).foregroundStyle(.secondary)
-                        if store.readyAccounts.isEmpty {
-                            Button("Connect an account") { tab = 1 }.font(.subheadline)
+                        if !store.isInitializing {
+                            if store.playing && !store.sharing {
+                                Button("Start sharing") { feedback(); store.shareCurrentPlayback(minutes: sessionMinutes) }
+                                    .font(.caption)
+                                    .disabled(!store.musicAuthorized || store.readyAccounts.isEmpty)
+                            } else {
+                                Text(store.sharing ? "Sharing · \(store.readyAccounts.count) \(store.readyAccounts.count == 1 ? "account" : "accounts")" : "Play & share")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            if store.readyAccounts.isEmpty {
+                                Button(store.accounts.isEmpty ? "Connect an account" : "Accounts") { tab = 1 }.font(.subheadline)
+                            }
                         }
                     }
                     errorMessage
                 }
+                .disabled(store.isInitializing)
                 .padding(.horizontal, 26).padding(.vertical, 24)
                 .frame(maxWidth: 500).frame(maxWidth: .infinity)
             }
@@ -120,7 +135,7 @@ struct ContentView: View {
                     Color(uiColor: .systemGroupedBackground)
                     if ["wisps", "vapor", "vortex"].contains(vaporStyle) {
                         VaporBackground(style: vaporStyle, color: vaporColor, opacity: vaporOpacity,
-                            speed: vaporSpeed, frameRate: vaporFrameRate, moving: scenePhase == .active && tab == 0 && !reduceMotion && (!followPlayback || store.playing))
+                            speed: vaporSpeed, frameRate: vaporFrameRate, moving: !store.isInitializing && scenePhase == .active && tab == 0 && !reduceMotion && (!followPlayback || store.playing))
                             .allowsHitTesting(false).accessibilityHidden(true)
                     }
                 }.ignoresSafeArea()
@@ -197,7 +212,7 @@ struct ContentView: View {
                         ContentUnavailableView("No accounts", systemImage: "person.crop.circle", description: Text("Add a Discord account."))
                     }
                     ForEach(store.accounts) { account in
-                        AccountRow(account: account, accent: accent, disabled: store.authorizing,
+                        AccountRow(account: account, accent: accent, disabled: store.authorizing || store.isInitializing,
                             musicPlaying: store.playing, details: { selectedAccount = account }, connect: { store.connect(account) })
                     }
                     errorMessage
@@ -211,7 +226,7 @@ struct ContentView: View {
                     Button("Add account", systemImage: "plus") {
                         if let account = store.addAccount() { store.connect(account) }
                     }
-                    .disabled(store.authorizing)
+                    .disabled(store.isInitializing || store.authorizing)
                 }
             }
         }
@@ -290,7 +305,7 @@ struct ContentView: View {
                     if store.liveActivityEnabled, let error = liveActivity.error { Text(error).font(.footnote).foregroundStyle(.secondary) }
                 }
                 Section("Music") {
-                    LabeledContent("Access", value: store.musicAuthorized ? "Allowed" : "Not allowed")
+                    LabeledContent("Access", value: store.isInitializing || !store.musicAccessChecked ? "Checking…" : (store.musicAuthorized ? "Allowed" : "Not allowed"))
                     Button("Open iOS settings") {
                         if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                     }

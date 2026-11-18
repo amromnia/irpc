@@ -215,3 +215,30 @@ median solver/image-data frame time from 2.37/2.66/2.51 ms (Vapor/Vortex/Wisps) 
 report the last active layer-update rate, end-to-end worker/render latency, target,
 and Low Power state; paused/background time is excluded. Rendering still stops
 when hidden, backgrounded, disabled, or suppressed by Reduce Motion.
+
+## 1.4: cold launch and permission loading
+
+The first-launch icon was also gated by `sharing && playing`, so an already-playing
+song with sharing off displayed Play. The icon/action now follows actual Music
+playback. A Start sharing action remains available when playback is active and
+sharing is off, avoiding any need to pause/resume the song just to enable presence.
+
+Startup reads MusicKit and media-library permission providers, starts native
+playback notifications, and seeds the initial playing state from MusicKit while
+MediaPlayer has not provided a definitive state. It never calls prepare/play/pause
+to discover the current state. After hydration, actual state-change notifications
+and successful commands supersede the initial snapshot, including the bounded
+command reconciliation introduced in 1.3.
+
+A loader covers permission and metadata checks and the saved SDK-account handshake.
+The centre button shows a spinner; Music controls and connection prompts are gated.
+Saved-account waiting is bounded to three seconds for unavailable networks. Account
+records that exist are routed to Accounts rather than described as absent. The
+same loading path covers foreground re-entry, with no new authorization prompt.
+MusicKit metadata reads wait for MusicKit authorization even if the media-library
+permission provider has already hydrated, so that transient mismatch isn't shown
+as a permission failure.
+
+The portable playback-state check covers a cold bridge paired with a playing
+MusicKit snapshot, authoritative pause notifications, and the existing command
+race cases. Real cold-launch notification timing remains a device check.

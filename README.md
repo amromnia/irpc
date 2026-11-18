@@ -111,7 +111,7 @@ artist, countdown, and sharing status on the Lock Screen / Dynamic Island. Tap i
 to reopen the app. It does not extend background execution. Status becomes stale
 after 90 seconds without an update, and respects user dismissal for that session.
 It is a Live Activity, not a Home Screen widget, and needs no App Group or push
-server. About contains only the app version. This release is **1.3, build 4**.
+server. About contains only the app version. This release is **1.4, build 5**.
 
 ## Background behavior and artwork
 
@@ -204,3 +204,18 @@ MediaPlayer and MusicKit state plus the last active vapor update rate and render
 time. Update counts measure layer submissions rather than compositor presentation.
 Actual iPhone cadence and the reported pause/resume sequence still need device
 verification; no physical-device playback run was available in this workspace.
+
+## 1.4 startup readiness
+
+The centre playback button shows a loading indicator while permission, initial
+playback/metadata, and saved-account restoration are checked. Music controls are
+disabled and permission/connection prompts are hidden until those checks finish.
+Saved-account handshakes are bounded to three seconds; an unavailable saved account
+opens the Accounts page rather than being presented as a new missing connection.
+
+On cold launch, the existing MusicKit playing snapshot seeds the UI while the
+MediaPlayer bridge hydrates. Actual playback notifications and subsequent commands
+then take precedence, preserving the 1.3 pause/resume behavior. The playback icon
+reflects Music itself, independently of the sharing switch. If Music is playing but
+sharing is off, **Start sharing** enables presence without interrupting the song.
+Pause pauses Music and stops sharing. No playback command is issued during startup.
