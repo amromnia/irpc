@@ -242,3 +242,29 @@ as a permission failure.
 The portable playback-state check covers a cold bridge paired with a playing
 MusicKit snapshot, authoritative pause notifications, and the existing command
 race cases. Real cold-launch notification timing remains a device check.
+
+## 1.6: track transitions and countdown expiry
+
+The old worker slept for the selected 5/15/30-second resend interval. Native item
+notifications only refreshed the play-state flag, and `poll` awaited artwork
+resolution before sending any metadata. These independent delays could leave the
+previous track visible until another sample or the next track.
+
+The active worker now samples every two seconds; `PresenceUpdatePolicy` bypasses
+the resend interval for changed track/queue entry, artwork, account set, and
+play/pause. Native notifications request an immediate check. Artwork runs in a
+separate cancellable task, with identity checks before caching or republishing.
+The selected interval remains the heartbeat for unchanged presence.
+
+`PresenceTimeline` retains the deadline of identical samples, including after
+expiry. Known-duration activities send only an end timestamp. Each SDK manager
+owns a cancellable expiry task which clears that activity at the deadline; newer
+updates, stop, sign-out, and removal invalidate it. Expiry preserves the timeline
+so the next stale sample cannot revive the song. A seek/repeat or advancing
+player sample can establish a corrected deadline. Unknown duration sends no timer.
+This requires active process execution and network delivery; it cannot guarantee
+Discord-side timing after iOS suspends the app or during connectivity loss.
+
+Regression checks: `bash scripts/check-presence.sh` covers stale/expired samples,
+seek/repeat, no elapsed-counter timestamps, immediate track changes and pause,
+artwork enrichment, notification overrides, and unchanged-update throttling.

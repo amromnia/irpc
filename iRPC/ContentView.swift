@@ -242,7 +242,7 @@ struct ContentView: View {
                         Text("2 hours").tag(120)
                         Text("4 hours").tag(240)
                     }.disabled(background.isRunning)
-                    Picker("Update interval", selection: $pollSeconds) {
+                    Picker("Resend interval", selection: $pollSeconds) {
                         Text("5 seconds").tag(5)
                         Text("15 seconds").tag(15)
                         Text("30 seconds").tag(30)

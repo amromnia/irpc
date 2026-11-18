@@ -5,10 +5,7 @@ import UIKit
 @MainActor
 final class BackgroundController: ObservableObject {
     static let shared = BackgroundController()
-    static var interval: UInt64 {
-        let seconds = UserDefaults.standard.integer(forKey: "sharing.pollSeconds")
-        return UInt64([5, 15, 30].contains(seconds) ? seconds : 15) * 1_000_000_000
-    }
+    static let interval = UInt64(PresenceUpdatePolicy.sampleSeconds * 1_000_000_000)
 
     @Published private(set) var isRunning = false
     @Published private(set) var status = "Start a sharing session. iOS may stop it early."

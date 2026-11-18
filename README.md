@@ -111,7 +111,7 @@ artist, countdown, and sharing status on the Lock Screen / Dynamic Island. Tap i
 to reopen the app. It does not extend background execution. Status becomes stale
 after 90 seconds without an update, and respects user dismissal for that session.
 It is a Live Activity, not a Home Screen widget, and needs no App Group or push
-server. About contains only the app version. This release is **1.5, build 6**.
+server. About contains only the app version. This release is **1.6, build 7**.
 
 ## Background behavior and artwork
 
@@ -225,3 +225,13 @@ Pause pauses Music and stops sharing. No playback command is issued during start
 Removed unused MusadoraKit references from both app targets and the local
 DiscordSocialKit package. Music playback and artwork use Apple frameworks and
 NowPlayingKit; NowPlayingKit has no external package dependencies.
+
+## 1.6 track transitions
+
+Music is sampled every two seconds during an active continued-processing session,
+with immediate checks on native track/playback notifications. The resend interval
+only controls unchanged Discord updates. New tracks publish without waiting for
+artwork; artwork is added when its lookup finishes, if the track is still current.
+Known-duration activities use end-only timestamps and clear at their deadline.
+Stale samples cannot extend or revive an expired countdown. Network delivery and
+iOS suspension can still delay Discord updates; device verification is required.

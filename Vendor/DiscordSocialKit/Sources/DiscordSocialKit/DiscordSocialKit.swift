@@ -38,6 +38,7 @@ public final class DiscordManager: ObservableObject {
 
     private var timeline = PresenceTimeline()
     private var presenceGeneration = 0
+    private var presenceExpiry: Task<Void, Never>?
     @Published public private(set) var presenceStatus = "No presence update sent yet."
     @Published public private(set) var lastPresenceAcknowledgedAt: Date?
 
@@ -358,11 +359,17 @@ public final class DiscordManager: ObservableObject {
 	}
 
 	public func clearRichPresence() {
+        clearRichPresence(resetTimeline: true)
+    }
+
+    private func clearRichPresence(resetTimeline: Bool) {
+        presenceExpiry?.cancel()
+        presenceExpiry = nil
 		guard let client = getClient() else { return }
 		print("🧹 Clearing rich presence...")
 
         presenceGeneration += 1
-        timeline.reset()
+        if resetTimeline { timeline.reset() }
         presenceStatus = "Presence cleared."
         lastPresenceAcknowledgedAt = nil
 		Discord_Client_ClearRichPresence(client)
@@ -469,6 +476,12 @@ public final class DiscordManager: ObservableObject {
         let generation = presenceGeneration
         let times = timeline.timestamps(id: id, duration: duration, position: currentTime,
                                         now: Date().timeIntervalSince1970)
+        presenceExpiry?.cancel()
+        presenceExpiry = nil
+        if let end = times.end, Double(end) / 1000 <= Date().timeIntervalSince1970 {
+            clearRichPresence(resetTimeline: false)
+            return
+        }
         presenceStatus = "Preparing presence update…"
 
         // The system player already supplies artwork, including library-only tracks.
@@ -529,7 +542,7 @@ public final class DiscordManager: ObservableObject {
 		var timestamps = Discord_ActivityTimestamps()
 		Discord_ActivityTimestamps_Init(&timestamps)
 
-        Discord_ActivityTimestamps_SetStart(&timestamps, times.start)
+        if let start = times.start { Discord_ActivityTimestamps_SetStart(&timestamps, start) }
         if let end = times.end { Discord_ActivityTimestamps_SetEnd(&timestamps, end) }
         Discord_Activity_SetTimestamps(&activity, &timestamps)
 
@@ -550,6 +563,15 @@ public final class DiscordManager: ObservableObject {
 		print("🎵 Sending activity update to Discord...")
 		Discord_Client_UpdateRichPresence(
 			client, &activity, Self.richPresenceCallback, Self.releasePresenceContext, contextPtr)
+        if let end = times.end {
+            let delay = max(0, Double(end) / 1000 - Date().timeIntervalSince1970)
+            presenceExpiry = Task { @MainActor [weak self] in
+                do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+                guard let self, self.presenceGeneration == generation else { return }
+                // Keep the expired timeline so stale metadata cannot resurrect it.
+                self.clearRichPresence(resetTimeline: false)
+            }
+        }
 	}
 
 	public func updateCurrentPlayback(
@@ -906,6 +928,8 @@ public final class DiscordManager: ObservableObject {
     /// Close a removed account's client after draining the callback queue.
     /// Stored credentials are handled separately by TokenStorage.delete().
     public func shutdown() {
+        presenceExpiry?.cancel()
+        presenceExpiry = nil
         acceptsTokenUpdates = false
         presenceGeneration += 1
         isRunning = false
@@ -925,6 +949,7 @@ public final class DiscordManager: ObservableObject {
     }
 
     deinit {
+        presenceExpiry?.cancel()
         clientLock.lock()
         let client = _client
         _client = nil

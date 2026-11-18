@@ -181,7 +181,7 @@ Multi-account OAuth/live presence and visual behavior remain device tests.
 
 ## 1.1: native motion and Live Activity extension
 
-Both application targets embed `AfterglowStatus.appex`. Version/build are 1.5/6
+Both application targets embed `AfterglowStatus.appex`. Version/build are 1.6/7
 for app and extension. The unsigned WSL configuration propagates
 `CODE_SIGNING_ALLOWED = NO` through the generated xcconfig, including the embedded
 extension; ordinary configuration omits that override. The bundle verifier checks
@@ -228,3 +228,14 @@ DiscordSocialKit package, including its obsolete package lockfile. The resolved
 WSL package graph now contains only DiscordSocialKit and NowPlayingKit.
 The local unsigned release build and `scripts/verify-ipa.py` passed for app and
 extension version 1.5/build 6. Output: `build/Afterglow-1.5-unsigned.ipa`.
+
+## 1.6: track transitions
+
+Local WSL checks passed: `scripts/check-presence.sh` (timeline and update policy),
+`scripts/check-playback-state.sh`, and the full unsigned release build with IPA
+verification. App and extension both report 1.6/build 7. Output:
+`build/Afterglow-1.6-unsigned.ipa`.
+
+SHA-256: `2b1d600378f4e9e93813b9f03695eadc31262a0470069c4ed3933c9b928f1dbf`.
+Phone testing of consecutive track transitions, including locked-screen playback,
+and Discord's actual rendering/delivery remains required.

@@ -7,20 +7,19 @@ struct PresenceTimeline {
     private var sampledAt: TimeInterval = 0
 
     mutating func timestamps(id: String, duration: TimeInterval, position: TimeInterval,
-                             now: TimeInterval) -> (start: UInt64, end: UInt64?) {
+                             now: TimeInterval) -> (start: UInt64?, end: UInt64?) {
         let position = position.isFinite ? max(0, position) : 0
         if track != id || abs(position - sampledPosition) >= 0.5 {
             track = id
             sampledPosition = position
             sampledAt = now
         }
-        // Predict briefly between observations; a stalled player is not proof
-        // that playback is still progressing. Pause/stop explicitly resets this.
-        var projected = sampledPosition + min(30, max(0, now - sampledAt))
-        let knownDuration = duration.isFinite && duration > 0
-        if knownDuration { projected = min(projected, duration) }
-        let start = max(0, now - projected)
-        return (UInt64(start * 1000), knownDuration ? UInt64((now + max(0, duration - projected)) * 1000) : nil)
+        // Identical samples never move the deadline, even after it has expired.
+        // Only a new track, seek, or advancing player sample can correct it.
+        guard duration.isFinite, duration > 0 else { return (nil, nil) }
+        let end = max(0, sampledAt + max(0, duration - sampledPosition))
+        // End-only timestamps avoid Discord falling back to an elapsed counter.
+        return (nil, UInt64(end * 1000))
     }
 
     mutating func reset() { track = nil }
