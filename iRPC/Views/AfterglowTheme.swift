@@ -13,4 +13,11 @@ extension Color {
         guard UIColor(self).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return "E44950" }
         return String(format: "%02X%02X%02X", Int(red * 255), Int(green * 255), Int(blue * 255))
     }
+    var darkVaporTint: Color {
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        guard UIColor(self).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha),
+              saturation > 0.1 else { return Color(afterglowHex: "971B2B") }
+        return Color(hue: Double(hue), saturation: Double(max(0.6, saturation)), brightness: Double(min(0.6, brightness)))
+    }
+
 }

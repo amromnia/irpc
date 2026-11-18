@@ -178,3 +178,20 @@ and fresh Discord/Music authorization. The old app's credentials are not copied.
 The initial redesigned app was also built from a clean native WSL copy at
 `/home/amr/ios-projects/afterglow-verify`. iOS 26 glass APIs compile through xtool.
 Multi-account OAuth/live presence and visual behavior remain device tests.
+
+## 1.1: native motion and Live Activity extension
+
+Both application targets embed `AfterglowStatus.appex`. Version/build are 1.1/2
+for app and extension. The unsigned WSL configuration propagates
+`CODE_SIGNING_ALLOWED = NO` through the generated xcconfig, including the embedded
+extension; ordinary configuration omits that override. The bundle verifier checks
+the extension identity, matching version, WidgetKit/ActivityKit linkage, and the
+absence of app/extension signatures or provisioning profiles. Sign the app and
+its extension with compatible identities when installing. Normal Xcode requires
+team configuration for the app and extension targets.
+
+The vapor solver has a portable native regression check (`check-vapor.sh`) for
+all styles, evolution/pause, premultiplied alpha, and absence of white highlights.
+The UI renderer and native widget extension compile through the extracted iOS
+SDK. Real-device checks remain necessary for visual fidelity, power use, Live
+Activity authorization/lifecycle, and signing/installation.

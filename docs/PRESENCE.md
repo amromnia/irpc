@@ -117,5 +117,30 @@ Next skips to the next queue entry. Previous restarts the current entry after th
 seconds, otherwise skips to the previous entry. Track changes invalidate in-flight
 public-artwork publication so an earlier song cannot be posted after a skip.
 Device tests should cover queue ends, an empty queue, external pause/resume, and
-rapid play/pause/skip interactions. Motion options are previewed separately; native
-background/button animation is awaiting a design choice.
+rapid play/pause/skip interactions. Motion options are native and configurable in Settings. The play/pause symbols
+rotate and scale between states; control presses use spring feedback and optional
+haptics. Reduce Motion and the animation switch disable those effects.
+
+## Live Activity
+
+The embedded `AfterglowStatus.appex` uses WidgetKit/ActivityKit to display sharing
+status and current track metadata on the Lock Screen and Dynamic Island. Enable
+it in Settings. It uses local ActivityKit updates, with no App Group, extra token
+storage, remote push service, or credential access in the extension. Metadata is
+bounded to fit the ActivityKit content-size limit.
+
+The app starts it in the foreground, coalesces metadata/status updates, refreshes
+its stale date periodically while executing, and ends it when sharing stops or
+the option is disabled. A dismissed activity is not recreated during the same
+session. After 90 seconds without updates, the extension shows a stale state;
+continued presence is not inferred from an old snapshot.
+
+A Live Activity does **not** provide more execution time. It can help a user see
+that reopening the app is needed. Apple documents the update and sandbox rules in
+[Displaying live data with Live Activities](https://developer.apple.com/documentation/activitykit/displaying-live-data-with-live-activities).
+Signing/install tools must sign the embedded `.appex` as well as the app.
+
+True beat/amplitude analysis is not implemented. The Follow playback preference
+uses the actual Music playback state, without microphone recording or synthetic
+beat claims. Apple excludes FairPlay-protected audio from audio processing taps;
+see [What's new in HLS](https://developer.apple.com/streaming/Whats-new-HLS.pdf).

@@ -89,6 +89,29 @@ require fresh sign-in; upstream credentials are not imported.
 The bottom tab bar uses native Liquid Glass on iOS 26. Earlier supported systems
 use their standard tab bar. Minimum iOS is 17.6.
 
+## Appearance and status (1.1)
+
+Settings remembers **Off / Vapor / Vortex / Wisps** (default Wisps), color source
+(Custom / Accent / Artwork), vapor color, speed, opacity, and Follow playback.
+The default is subtle dark red with no added white highlights. Artwork color uses
+MusicKit's average background color when available, or samples native library
+artwork; neutral/unavailable colors retain the custom tint. Sampled colors are
+darkened to keep the background subdued. Color sampling does not upload artwork.
+
+Follow playback pauses the vapor with Music. It does not analyze beats or audio
+amplitude. Apple Music does not expose the protected playback stream to this app.
+Button rotations, spring presses, and haptics have independent switches. Reduce
+Motion suppresses motion, off-screen/background views stop rendering, and Low
+Power Mode lowers the render cadence. The native fluid solver runs on a serial
+worker, not the UI thread. Off removes the renderer entirely.
+
+An optional **Live Activity → Show while sharing** displays the current song,
+artist, countdown, and sharing status on the Lock Screen / Dynamic Island. Tap it
+to reopen the app. It does not extend background execution. Status becomes stale
+after 90 seconds without an update, and respects user dismissal for that session.
+It is a Live Activity, not a Home Screen widget, and needs no App Group or push
+server. About contains only the app version. This release is **1.1, build 2**.
+
 ## Background behavior and artwork
 
 On iOS 26+, continued-processing sessions target 30 minutes, 2 hours, or 4 hours,
@@ -126,10 +149,12 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 bash scripts/check-accounts.sh
 bash scripts/check-token-storage.sh
 bash scripts/check-presence.sh
+bash scripts/check-vapor.sh
 ```
 
 Live multi-account OAuth, simultaneous Discord presence, long-session runtime, and
-visual/accessibility behavior need physical-device validation. Normal Xcode builds
+visual/accessibility behavior, native vapor cadence/battery use, artwork sampling,
+and Live Activity appearance/lifecycle need physical-device validation. Normal Xcode builds
 have not been run on macOS during this work. The inherited precompiled Discord SDK
 still has an unverified provenance question; see [fork notes](Vendor/DiscordSocialKit/FORK.md).
 

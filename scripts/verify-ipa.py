@@ -40,6 +40,27 @@ def verify(path):
         assert info["PresenceDiscordApplicationID"] == identity["DISCORD_APPLICATION_ID"]
         assert info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["discord-" + identity["DISCORD_APPLICATION_ID"]]
         assert info["MinimumOSVersion"] == "17.6"
+        assert info["CFBundleShortVersionString"] == "1.1"
+        assert info["CFBundleVersion"] == "2"
+        assert info["NSSupportsLiveActivities"] is True
+        status_prefix = prefix + "PlugIns/AfterglowStatus.appex/"
+        status = plistlib.loads(archive.read(status_prefix + "Info.plist"))
+        assert status["CFBundleIdentifier"] == info["CFBundleIdentifier"] + ".status"
+        assert status["NSExtension"]["NSExtensionPointIdentifier"] == "com.apple.widgetkit-extension"
+        assert status["CFBundleShortVersionString"] == info["CFBundleShortVersionString"]
+        assert status["CFBundleVersion"] == info["CFBundleVersion"]
+        assert not any(n.startswith(status_prefix) and ("_CodeSignature" in n or n.endswith("embedded.mobileprovision")) for n in names)
+        status_binary = archive.read(status_prefix + status["CFBundleExecutable"])
+        offset = 32
+        for _ in range(struct.unpack_from("<I", status_binary, 16)[0]):
+            command, size = struct.unpack_from("<II", status_binary, offset)
+            assert command != 0x1D, "Expected an unsigned widget extension"
+            offset += size
+        status_dependencies = dylibs(status_binary)
+        for required in ("ActivityKit", "WidgetKit"):
+            assert any(required in name for name in status_dependencies), (required, status_dependencies)
+        assert not any("Discord" in name or "SwiftData" in name for name in status_dependencies)
+
         assert info["NSAppleMusicUsageDescription"]
         assert info["BGTaskSchedulerPermittedIdentifiers"] == [info["CFBundleIdentifier"] + ".presence", info["CFBundleIdentifier"] + ".refresh"]
         assert {"processing", "fetch"}.issubset(info["UIBackgroundModes"])

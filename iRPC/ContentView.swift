@@ -4,17 +4,40 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var store: PresenceStore
     @ObservedObject private var background = BackgroundController.shared
+    @ObservedObject private var liveActivity = SharingActivityController.shared
     @ObservedObject private var refresh = BackgroundRefreshController.shared
     @AppStorage("presence.sessionMinutes") private var sessionMinutes = 120
     @AppStorage("sharing.pollSeconds") private var pollSeconds = 15
     @AppStorage("appearance.accent") private var accentHex = "E44950"
     @AppStorage("appearance.mode") private var appearance = 0
+    @AppStorage("appearance.vaporStyle") private var vaporStyle = "wisps"
+    @AppStorage("appearance.vaporColorSource") private var vaporColorSource = "custom"
+    @AppStorage("appearance.vaporColor") private var vaporHex = "971B2B"
+    @AppStorage("appearance.vaporOpacity") private var vaporOpacity = 0.4
+    @AppStorage("appearance.vaporSpeed") private var vaporSpeed = 1.0 / 1.3
+    @AppStorage("appearance.followPlayback") private var followPlayback = true
+    @AppStorage("appearance.buttonAnimations") private var buttonAnimations = true
+    @AppStorage("appearance.haptics") private var haptics = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
     @State private var tab = 0
     @State private var selectedAccount: DiscordAccount?
 
     private var accent: Color { Color(afterglowHex: accentHex) }
+    private var animateButtons: Bool { buttonAnimations && !reduceMotion }
+    private var vaporColor: Color {
+        switch vaporColorSource {
+        case "artwork":
+            if let color = store.artworkTint { return Color(uiColor: color).darkVaporTint }
+            return Color(afterglowHex: vaporHex)
+        case "accent": return accent.darkVaporTint
+        default: return Color(afterglowHex: vaporHex)
+        }
+    }
+    private func feedback() {
+        if haptics { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
+    }
 
     var body: some View {
         TabView(selection: $tab) {
@@ -57,30 +80,29 @@ struct ContentView: View {
                     if !store.playback.id.isEmpty { timeline }
                     VStack(spacing: 12) {
                         HStack(spacing: 34) {
-                            Button { Task { await store.skipTrack(previous: true) } } label: {
+                            Button { feedback(); Task { await store.skipTrack(previous: true) } } label: {
                                 Image(systemName: "backward.end.fill").font(.title2).frame(width: 44, height: 44)
                             }
                             .accessibilityLabel("Previous track or restart")
                             .disabled(!store.musicAuthorized || store.playback.id.isEmpty || store.controllingPlayback)
-                            Button { Task { await store.togglePlaybackAndSharing(minutes: sessionMinutes) } } label: {
-                                Image(systemName: store.sharing && store.playing ? "pause.fill" : "play.fill")
+                            Button { feedback(); Task { await store.togglePlaybackAndSharing(minutes: sessionMinutes) } } label: {
+                                PlaybackSymbol(playing: store.sharing && store.playing, animated: animateButtons)
                                     .font(.system(size: 28, weight: .semibold))
                                     .frame(width: 78, height: 78)
                                     .foregroundStyle(.white)
                                     .background(accent, in: Circle())
                             }
-                            .buttonStyle(.plain)
                             .disabled(store.controllingPlayback || (!(store.sharing && store.playing) && (!store.musicAuthorized || store.readyAccounts.isEmpty)))
                             .opacity(!store.sharing && store.readyAccounts.isEmpty ? 0.4 : 1)
                             .accessibilityLabel(store.sharing && store.playing ? "Pause Music and stop sharing" : "Play Music and share")
-                            Button { Task { await store.skipTrack(previous: false) } } label: {
+                            Button { feedback(); Task { await store.skipTrack(previous: false) } } label: {
                                 Image(systemName: "forward.end.fill").font(.title2).frame(width: 44, height: 44)
                             }
                             .accessibilityLabel("Next track")
                             .disabled(!store.musicAuthorized || store.playback.id.isEmpty || store.controllingPlayback)
                         }
-                        .buttonStyle(.plain)
-                        Text(store.sharing ? "Sharing · \(store.readyAccounts.count) accounts" : "Play & share")
+                        .buttonStyle(PlaybackButtonStyle(animated: animateButtons))
+                        Text(store.sharing ? "Sharing · \(store.readyAccounts.count) \(store.readyAccounts.count == 1 ? "account" : "accounts")" : "Play & share")
                             .font(.caption).foregroundStyle(.secondary)
                         if store.readyAccounts.isEmpty {
                             Button("Connect an account") { tab = 1 }.font(.subheadline)
@@ -91,7 +113,16 @@ struct ContentView: View {
                 .padding(.horizontal, 26).padding(.vertical, 24)
                 .frame(maxWidth: 500).frame(maxWidth: .infinity)
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background {
+                ZStack {
+                    Color(uiColor: .systemGroupedBackground)
+                    if ["wisps", "vapor", "vortex"].contains(vaporStyle) {
+                        VaporBackground(style: vaporStyle, color: vaporColor, opacity: vaporOpacity,
+                            speed: vaporSpeed, moving: scenePhase == .active && tab == 0 && !reduceMotion && (!followPlayback || store.playing))
+                            .allowsHitTesting(false).accessibilityHidden(true)
+                    }
+                }.ignoresSafeArea()
+            }
             .navigationTitle(AppIdentity.name)
             .navigationBarTitleDisplayMode(.inline)
         }
@@ -215,6 +246,43 @@ struct ContentView: View {
                         Text("Dark").tag(2)
                     }
                 }
+                Section("Background appearance") {
+                    Picker("Style", selection: $vaporStyle) {
+                        Text("Off").tag("off")
+                        Text("Vapor").tag("vapor")
+                        Text("Vortex").tag("vortex")
+                        Text("Wisps").tag("wisps")
+                    }
+                    if vaporStyle != "off" {
+                        Picker("Color", selection: $vaporColorSource) {
+                            Text("Custom").tag("custom")
+                            Text("Accent").tag("accent")
+                            Text("Artwork").tag("artwork")
+                        }
+                        .onChange(of: vaporColorSource) { _, _ in store.refreshArtworkColor() }
+                        if vaporColorSource == "custom" {
+                            ColorPicker("Vapor color", selection: Binding(get: { Color(afterglowHex: vaporHex) },
+                                set: { vaporHex = $0.afterglowHex }), supportsOpacity: false)
+                        }
+                        HStack {
+                            Text("Speed")
+                            Slider(value: $vaporSpeed, in: 0.25...1.5).accessibilityLabel("Vapor speed")
+                            Text(vaporSpeed, format: .percent.precision(.fractionLength(0))).monospacedDigit().font(.caption).frame(width: 40)
+                        }
+                        HStack {
+                            Text("Opacity")
+                            Slider(value: $vaporOpacity, in: 0.1...0.65).accessibilityLabel("Vapor opacity")
+                            Text(vaporOpacity, format: .percent.precision(.fractionLength(0))).monospacedDigit().font(.caption).frame(width: 40)
+                        }
+                        Toggle("Follow playback", isOn: $followPlayback)
+                    }
+                    Toggle("Button animations", isOn: $buttonAnimations)
+                    Toggle("Haptics", isOn: $haptics)
+                }
+                Section("Live Activity") {
+                    Toggle("Show while sharing", isOn: $store.liveActivityEnabled)
+                    if store.liveActivityEnabled, let error = liveActivity.error { Text(error).font(.footnote).foregroundStyle(.secondary) }
+                }
                 Section("Music") {
                     LabeledContent("Access", value: store.musicAuthorized ? "Allowed" : "Not allowed")
                     Button("Open iOS settings") {
@@ -230,9 +298,7 @@ struct ContentView: View {
                         .disabled(store.artworkDiagnostics == "Not checked")
                 }
                 Section("About") {
-                    LabeledContent("App", value: AppIdentity.name)
-                    LabeledContent("Discord application", value: String(AppIdentity.applicationID))
-                        .font(.caption).textSelection(.enabled)
+                    LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")
                 }
             }
             .navigationTitle("Settings")

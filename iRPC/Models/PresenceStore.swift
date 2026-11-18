@@ -2,6 +2,7 @@ import Combine
 import DiscordSocialKit
 import Foundation
 import MusicKit
+import MediaPlayer
 import MusadoraKit
 import NowPlayingKit
 import UIKit
@@ -27,6 +28,14 @@ final class PresenceStore: ObservableObject {
     private var discordArtworkCheckedAt = Date.distantPast
     private var discordArtworkStatus = "Not checked"
     private var sharingGeneration = 0
+    @Published private(set) var artworkTint: UIColor?
+    private var artworkColorTrack = ""
+    @Published var liveActivityEnabled = UserDefaults.standard.bool(forKey: "sharing.liveActivity") {
+        didSet {
+            UserDefaults.standard.set(liveActivityEnabled, forKey: "sharing.liveActivity")
+            updateLiveActivity()
+        }
+    }
     @Published private(set) var sharing = false
     @Published private(set) var restoring = false
     @Published var error: String?
@@ -106,6 +115,7 @@ final class PresenceStore: ObservableObject {
                 }
                 self.rejectDuplicateAccounts()
                 self.tryAutoStart()
+                self.updateLiveActivity()
             }
         }
     }
@@ -170,7 +180,7 @@ final class PresenceStore: ObservableObject {
         guard musicAuthorized else { playing = false; return }
         hasFreshPlayback = false
         readingPlayback = true
-        defer { readingPlayback = false }
+        defer { readingPlayback = false; updateLiveActivity() }
         playing = SystemMusicPlayer.shared.state.playbackStatus == .playing
         do {
             let current = try await music.getCurrentPlayback()
@@ -193,6 +203,11 @@ final class PresenceStore: ObservableObject {
             hasFreshPlayback = true
             recentPlayback = false
             observedAt = Date()
+            if artworkColorTrack != current.id {
+                artworkColorTrack = current.id
+                artworkTint = nil
+                refreshArtworkColor()
+            }
         } catch NowPlayingError.noCurrentEntry {
             currentSong = nil
             if !loadedHistory {
@@ -211,6 +226,42 @@ final class PresenceStore: ObservableObject {
         } catch {
             self.error = "Couldn't read the current song. Check Music access and try again."
         }
+    }
+
+    func refreshArtworkColor() {
+        guard UserDefaults.standard.string(forKey: "appearance.vaporColorSource") == "artwork" else { return }
+        if let color = currentArtwork?.backgroundColor {
+            artworkTint = UIColor(cgColor: color)
+            return
+        }
+        // Library artwork can be device-local, so use MediaPlayer's native image.
+        guard let item = MPMusicPlayerController.systemMusicPlayer.nowPlayingItem,
+              item.title == playback.title,
+              let image = item.artwork?.image(at: CGSize(width: 32, height: 32)),
+              let cgImage = image.cgImage else { return }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let sampled = pixel.withUnsafeMutableBytes { bytes -> Bool in
+            guard let context = CGContext(data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.interpolationQuality = .high
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        if sampled, pixel[3] > 0 {
+            let alpha = CGFloat(pixel[3])
+            artworkTint = UIColor(red: CGFloat(pixel[0]) / alpha, green: CGFloat(pixel[1]) / alpha,
+                                  blue: CGFloat(pixel[2]) / alpha, alpha: 1)
+        }
+    }
+
+    private func updateLiveActivity() {
+        let accepted = readyAccounts.contains { ($0.discord.lastPresenceAcknowledgedAt ?? .distantPast).timeIntervalSinceNow > -90 }
+        let state = SharingActivityAttributes.ContentState(title: String(playback.title.prefix(160)), artist: String(playback.artist.prefix(160)),
+            playing: playing, sharing: sharing, acknowledged: accepted, accounts: readyAccounts.count,
+            accentHex: UserDefaults.standard.string(forKey: "appearance.accent") ?? "E44950",
+            end: playing && playback.duration.isFinite && playback.playbackTime.isFinite && playback.duration > playback.playbackTime
+                ? observedAt.addingTimeInterval(playback.duration - playback.playbackTime) : nil)
+        SharingActivityController.shared.update(enabled: liveActivityEnabled && sharing, state: state)
     }
 
     /// Library artwork is a device resource. Resolve catalog relationships from
@@ -334,6 +385,7 @@ final class PresenceStore: ObservableObject {
         guard musicAuthorized, !readyAccounts.isEmpty else { return }
         error = nil
         sharing = true
+        updateLiveActivity()
         UserDefaults.standard.set(true, forKey: "sharing.requested")
         for account in readyAccounts { account.discord.isRunning = true }
         if #available(iOS 26.0, *) {
@@ -356,12 +408,14 @@ final class PresenceStore: ObservableObject {
         autoStartPolicy.suppress()
         UserDefaults.standard.set(false, forKey: "sharing.requested")
         sharing = false
+        updateLiveActivity()
         BackgroundRefreshController.shared.cancel()
         BackgroundController.shared.stop()
         for account in accounts { account.discord.stopPresenceUpdates() }
     }
 
     private func finishSession() {
+        defer { updateLiveActivity() }
         if backgroundRefresh && UserDefaults.standard.bool(forKey: "sharing.requested") {
             BackgroundRefreshController.shared.schedule()
         } else {
@@ -372,6 +426,7 @@ final class PresenceStore: ObservableObject {
     }
 
     func enteredForeground() {
+        updateLiveActivity()
         autoStartPolicy.enterForeground()
         tryAutoStart()
     }

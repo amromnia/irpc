@@ -34,11 +34,13 @@ def configuration(root=ROOT, environment=None):
 
 
 def write(root=ROOT, environment=None):
+    environment = os.environ if environment is None else environment
     values = configuration(root, environment)
+    unsigned_settings = "CODE_SIGNING_ALLOWED = NO\n" if environment.get("IRPC_XTOOL") == "1" else ""
     output = root / "Config"
     output.mkdir(exist_ok=True)
     (output / "Local.xcconfig").write_text("// Generated public build values; do not edit.\n" +
-        "".join(f"{key} = {value}\n" for key, value in sorted(values.items())), encoding="utf-8")
+        "".join(f"{key} = {value}\n" for key, value in sorted(values.items())) + unsigned_settings, encoding="utf-8")
     (output / "BuildIdentity.json").write_text(json.dumps(values, indent=2) + "\n", encoding="utf-8")
     print("Configured", values["APP_DISPLAY_NAME"], "with Discord application", values["DISCORD_APPLICATION_ID"])
 

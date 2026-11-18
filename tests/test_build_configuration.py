@@ -28,6 +28,16 @@ class BuildConfigurationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     config.configuration(root, {})
 
+    def test_portable_build_disables_signing_for_embedded_extensions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            values = {"DISCORD_APPLICATION_ID": "1572242579049808028", "IRPC_XTOOL": "1"}
+            config.write(root, values)
+            self.assertIn("CODE_SIGNING_ALLOWED = NO", (root / "Config/Local.xcconfig").read_text())
+            values.pop("IRPC_XTOOL")
+            config.write(root, values)
+            self.assertNotIn("CODE_SIGNING_ALLOWED", (root / "Config/Local.xcconfig").read_text())
+
     def test_an_application_id_is_required(self):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(ValueError):
