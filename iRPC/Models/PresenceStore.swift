@@ -671,10 +671,14 @@ final class PresenceStore: ObservableObject {
         await refreshPlayback()
         try Task.checkCancellation()
         guard sharing else { throw CancellationError() }
+        let configuredTimeout = UserDefaults.standard.integer(forKey: "sharing.trackTransitionSeconds")
+        for account in readyAccounts {
+            account.discord.trackTransitionSeconds = Double([15, 30, 60].contains(configuredTimeout) ? configuredTimeout : 30)
+        }
         guard playing, hasFreshPlayback, !playback.id.isEmpty else {
             if presenceUpdates.shouldPublish(track: nil, now: ProcessInfo.processInfo.systemUptime,
                                              interval: Double(pollingSeconds), force: force) {
-                for account in accounts { account.discord.clearPlayback() }
+                for account in readyAccounts { account.discord.waitForNextTrack() }
             }
             return
         }

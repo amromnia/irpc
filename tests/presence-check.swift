@@ -24,6 +24,18 @@ struct PresenceCheck {
                      "Stale tracks must stay expired and must never acquire an elapsed counter")
         let repeated = ending.timestamps(id: "ending", duration: 240, position: 0, now: now + 121)
         precondition(repeated.end == UInt64((now + 361) * 1000), "Repeat/seek must accept a new deadline")
+        var transition = PresenceTransition()
+        precondition(transition.begin(now: now + 1, timeout: 30))
+        let waitingDeadline = transition.deadline
+        precondition(waitingDeadline == now + 31)
+        precondition(!transition.begin(now: now + 5, timeout: 30) && transition.deadline == waitingDeadline,
+                     "Repeated stale samples must not restart the transition timeout")
+        precondition(!transition.begin(now: now + 120, timeout: 30),
+                     "Expired waiting presence must not reappear from stale samples")
+        transition.reset()
+        precondition(transition.deadline == nil, "New playback or explicit stop resets waiting state")
+        precondition(transition.begin(now: now + 200, timeout: 60) && transition.deadline == now + 260,
+                     "A later transition must use its configured timeout")
         timeline.reset()
         let resumed = timeline.timestamps(id: "song", duration: 240, position: 20, now: now + 100)
         precondition(resumed.end == UInt64((now + 320) * 1000), "Resume must start from the actual player position")
@@ -40,6 +52,6 @@ struct PresenceCheck {
         precondition(PublicArtworkPolicy.url(artwork) == artwork)
         precondition(PublicArtworkPolicy.url(URL(string: "http://example.com/image")) == nil)
         precondition(PublicArtworkPolicy.url(URL(string: "https://user:password@example.com/image")) == nil)
-        print("PASS: countdown continuity, correction, seek, expiry, pause/resume, and artwork selection")
+        print("PASS: countdown continuity, correction, seek, expiry, bounded track transitions, pause/resume, and artwork selection")
     }
 }

@@ -30,3 +30,16 @@ struct PresenceTimeline {
         }
     }
 }
+
+/// A transition gets one deadline. Repeated stale/missing samples cannot renew it.
+struct PresenceTransition {
+    private(set) var deadline: TimeInterval?
+
+    mutating func begin(now: TimeInterval, timeout: TimeInterval) -> Bool {
+        guard deadline == nil else { return false }
+        deadline = now + timeout
+        return true
+    }
+
+    mutating func reset() { deadline = nil }
+}

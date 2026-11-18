@@ -268,3 +268,32 @@ Discord-side timing after iOS suspends the app or during connectivity loss.
 Regression checks: `bash scripts/check-presence.sh` covers stale/expired samples,
 seek/repeat, no elapsed-counter timestamps, immediate track changes and pause,
 artwork enrichment, notification overrides, and unchanged-update throttling.
+
+## 1.7: bounded waiting presence and Listening activity
+
+1.6 cleared immediately at a song deadline or missing/paused sample. 1.7 instead
+publishes "Waiting for next track", retaining the previous cover and putting the
+previous track/artist in the state field. This activity has no timestamps. Its
+single deadline defaults to 30 seconds and is configurable as 15/30/60 seconds.
+Repeated stale samples cannot restart it, even after it clears. New valid
+playback resets the transition; explicit stop/sign-out still clears immediately.
+The same generation-guarded SDK expiry task transitions from song → waiting →
+cleared. New track/artwork updates invalidate older scheduled actions.
+
+The activity type now requests `Discord_ActivityTypes_Listening`. The bundled
+SDK exposes the enum, but its version accessors in the arm64 binary return
+0.0.0, so the presence of the enum does not establish runtime support. Discord's
+release notes added Listening support in SDK 1.5 (2025-08-13). Actual icon/layout
+and server acceptance require a live test; if Playing remains, upgrading the
+inherited SDK is the next step. This change does not replace the SDK binaries.
+External assets support animated GIF/WebP/AVIF according to Discord's guide;
+a small hosted equalizer could accompany the cover. No animated asset is
+configured or hosted by this change. Uploaded portal assets do not provide the
+same animation support. Rich Presence does not provide custom card layout or
+arbitrary UI animation.
+
+Source: https://github.com/discord/discord-api-docs/blob/main/developers/discord-social-sdk/development-guides/setting-rich-presence.mdx
+Regression: `bash scripts/check-presence.sh` also checks fixed transition
+deadlines, stale polls after timeout, reset, and configurable later transitions.
+
+SDK activity-type release notes: https://discord.com/developers/docs/social-sdk/release_notes.html

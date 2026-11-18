@@ -37,6 +37,9 @@ public final class DiscordManager: ObservableObject {
     private var acceptsTokenUpdates = true
 
     private var timeline = PresenceTimeline()
+    private var transition = PresenceTransition()
+    private var lastPresence: (title: String, artist: String, artwork: URL?)?
+    public var trackTransitionSeconds: TimeInterval = 30
     private var presenceGeneration = 0
     private var presenceExpiry: Task<Void, Never>?
     @Published public private(set) var presenceStatus = "No presence update sent yet."
@@ -369,7 +372,11 @@ public final class DiscordManager: ObservableObject {
 		print("🧹 Clearing rich presence...")
 
         presenceGeneration += 1
-        if resetTimeline { timeline.reset() }
+        if resetTimeline {
+            timeline.reset()
+            transition.reset()
+            lastPresence = nil
+        }
         presenceStatus = "Presence cleared."
         lastPresenceAcknowledgedAt = nil
 		Discord_Client_ClearRichPresence(client)
@@ -446,52 +453,48 @@ public final class DiscordManager: ObservableObject {
 
 
 	public func updateRichPresence(
-		id: String, title: String, artist: String, duration: TimeInterval,
-		currentTime: TimeInterval,
-		artworkURL: URL? = nil
-	) async {
-		guard let client = getClient() else {
-			print("⚠️ Cannot update Rich Presence: No client")
-			return
-		}
-
-		guard isAuthenticated else {
-			print("⚠️ Cannot update Rich Presence: Not authenticated")
-			return
-		}
-
-		// Skip empty updates
-		if title.isEmpty || artist.isEmpty {
-			print("⚠️ Skipping empty rich presence update")
-			return
-		}
-
-		print("📝 Rich Presence Update Request:")
-		print("- Title: \(title)")
-		print("- Artist: \(artist)")
-		print("- Duration: \(duration)")
-		print("- Current Time: \(currentTime)")
-
-        presenceGeneration += 1
-        let generation = presenceGeneration
+        id: String, title: String, artist: String, duration: TimeInterval,
+        currentTime: TimeInterval, artworkURL: URL? = nil
+    ) async {
+        guard !Task.isCancelled, isAuthenticated, isRunning, !title.isEmpty, !artist.isEmpty else { return }
         let times = timeline.timestamps(id: id, duration: duration, position: currentTime,
                                         now: Date().timeIntervalSince1970)
-        presenceExpiry?.cancel()
-        presenceExpiry = nil
         if let end = times.end, Double(end) / 1000 <= Date().timeIntervalSince1970 {
-            clearRichPresence(resetTimeline: false)
+            waitForNextTrack()
             return
         }
-        presenceStatus = "Preparing presence update…"
-
-        // The system player already supplies artwork, including library-only tracks.
+        transition.reset()
         let image = PresenceTimeline.artwork(provided: artworkURL, cached: nil)
-        guard generation == presenceGeneration, !Task.isCancelled, isAuthenticated, isRunning else { return }
+        lastPresence = (title, artist, image)
+        sendRichPresence(title: title, state: "by \(artist)", image: image,
+                         imageText: "\(title) by \(artist)", end: times.end,
+                         expiresAt: times.end.map { Double($0) / 1000 }, clearOnExpiry: false)
+    }
+
+    /// Keep the card visible through short queue gaps, without an expired timer.
+    public func waitForNextTrack() {
+        guard isAuthenticated, isRunning, let lastPresence,
+              transition.begin(now: Date().timeIntervalSince1970,
+                               timeout: [15.0, 30.0, 60.0].contains(trackTransitionSeconds) ? trackTransitionSeconds : 30)
+        else { return }
+        sendRichPresence(title: "Waiting for next track", state: lastPresence.title + " — " + lastPresence.artist,
+                         image: lastPresence.artwork, imageText: lastPresence.title + " by " + lastPresence.artist,
+                         end: nil, expiresAt: transition.deadline, clearOnExpiry: true)
+    }
+
+    private func sendRichPresence(title: String, state: String, image: URL?, imageText: String,
+                                  end: UInt64?, expiresAt: TimeInterval?, clearOnExpiry: Bool) {
+        guard isAuthenticated, isRunning, let client = getClient() else { return }
+        presenceGeneration += 1
+        let generation = presenceGeneration
+        presenceExpiry?.cancel()
+        presenceExpiry = nil
+        presenceStatus = "Preparing presence update…"
 		var activity = Discord_Activity()
 		Discord_Activity_Init(&activity)
 
 		// Set activity type first
-		Discord_Activity_SetType(&activity, Discord_ActivityTypes_Playing)
+		Discord_Activity_SetType(&activity, Discord_ActivityTypes_Listening)
 
 		// Set up asset
 		var assets = Discord_ActivityAssets()
@@ -501,7 +504,7 @@ public final class DiscordManager: ObservableObject {
         var imageTextPtr: UnsafeMutablePointer<UInt8>?
         if let image {
             let imageBuffer = makeStringBuffer(from: image.absoluteString)
-            let textBuffer = makeStringBuffer(from: "\(title) by \(artist)")
+            let textBuffer = makeStringBuffer(from: imageText)
             imagePtr = imageBuffer.ptr
             imageTextPtr = textBuffer.ptr
             var imageString = Discord_String()
@@ -532,19 +535,20 @@ public final class DiscordManager: ObservableObject {
 		Discord_Activity_SetDetails(&activity, &detailsStr)
 
 		// Set state (artist)
-		let statePtr = makeStringBuffer(from: "by \(artist)").ptr
+		let statePtr = makeStringBuffer(from: state).ptr
 		var stateStr = Discord_String()
 		stateStr.ptr = statePtr
-		stateStr.size = Int(Int32(("by \(artist)").utf8.count))
+		stateStr.size = Int(Int32(state.utf8.count))
 		Discord_Activity_SetState(&activity, &stateStr)
 
 		// Set timestamps safely
 		var timestamps = Discord_ActivityTimestamps()
 		Discord_ActivityTimestamps_Init(&timestamps)
 
-        if let start = times.start { Discord_ActivityTimestamps_SetStart(&timestamps, start) }
-        if let end = times.end { Discord_ActivityTimestamps_SetEnd(&timestamps, end) }
-        Discord_Activity_SetTimestamps(&activity, &timestamps)
+        if let end {
+            Discord_ActivityTimestamps_SetEnd(&timestamps, end)
+            Discord_Activity_SetTimestamps(&activity, &timestamps)
+        }
 
 		// Create context for cleanup
 		let context = RichPresenceContext(
@@ -563,13 +567,15 @@ public final class DiscordManager: ObservableObject {
 		print("🎵 Sending activity update to Discord...")
 		Discord_Client_UpdateRichPresence(
 			client, &activity, Self.richPresenceCallback, Self.releasePresenceContext, contextPtr)
-        if let end = times.end {
-            let delay = max(0, Double(end) / 1000 - Date().timeIntervalSince1970)
+        if let expiresAt {
+            let delay = max(0, expiresAt - Date().timeIntervalSince1970)
             presenceExpiry = Task { @MainActor [weak self] in
                 do { try await Task.sleep(for: .seconds(delay)) } catch { return }
                 guard let self, self.presenceGeneration == generation else { return }
-                // Keep the expired timeline so stale metadata cannot resurrect it.
-                self.clearRichPresence(resetTimeline: false)
+                // Keep the timeline and transition deadline after timeout so
+                // stale polls cannot revive either the timer or the waiting card.
+                if clearOnExpiry { self.clearRichPresence(resetTimeline: false) }
+                else { self.waitForNextTrack() }
             }
         }
 	}

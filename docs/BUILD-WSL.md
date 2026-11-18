@@ -181,7 +181,7 @@ Multi-account OAuth/live presence and visual behavior remain device tests.
 
 ## 1.1: native motion and Live Activity extension
 
-Both application targets embed `AfterglowStatus.appex`. Version/build are 1.6/7
+Both application targets embed `AfterglowStatus.appex`. Version/build are 1.7/8
 for app and extension. The unsigned WSL configuration propagates
 `CODE_SIGNING_ALLOWED = NO` through the generated xcconfig, including the embedded
 extension; ordinary configuration omits that override. The bundle verifier checks
@@ -239,3 +239,15 @@ verification. App and extension both report 1.6/build 7. Output:
 SHA-256: `2b1d600378f4e9e93813b9f03695eadc31262a0470069c4ed3933c9b928f1dbf`.
 Phone testing of consecutive track transitions, including locked-screen playback,
 and Discord's actual rendering/delivery remains required.
+
+## 1.7: waiting presence
+
+Local timeline/transition, update-policy, and playback-state checks passed, along
+with the unsigned release build and IPA verification for app/extension 1.7/build 8.
+Output: `build/Afterglow-1.7-unsigned.ipa`.
+
+SHA-256: `22fd2b866f5aa667bc91513df15ea78031f1737bbb686eaaf7d5324cd1987cf4`.
+Device checks remain: normal track → waiting → next track, timeout at the
+selected 15/30/60 seconds, immediate explicit stop, and Listening rendering in
+Discord. The SDK binary is inherited and unversioned; Listening may require an
+SDK upgrade if Discord continues to render Playing.

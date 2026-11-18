@@ -111,7 +111,7 @@ artist, countdown, and sharing status on the Lock Screen / Dynamic Island. Tap i
 to reopen the app. It does not extend background execution. Status becomes stale
 after 90 seconds without an update, and respects user dismissal for that session.
 It is a Live Activity, not a Home Screen widget, and needs no App Group or push
-server. About contains only the app version. This release is **1.6, build 7**.
+server. About contains only the app version. This release is **1.7, build 8**.
 
 ## Background behavior and artwork
 
@@ -235,3 +235,13 @@ artwork; artwork is added when its lookup finishes, if the track is still curren
 Known-duration activities use end-only timestamps and clear at their deadline.
 Stale samples cannot extend or revive an expired countdown. Network delivery and
 iOS suspension can still delay Discord updates; device verification is required.
+
+## 1.7 track transition presence
+
+At song end or a brief metadata/playback gap, Discord keeps the last cover and
+shows "Waiting for next track" without timestamps. A new song replaces it
+immediately. Settings → Sharing → Track transition timeout selects 15, 30
+(default), or 60 seconds before clearing unavailable playback; stale samples
+cannot renew that timeout. Stop sharing still clears immediately.
+Activity type is now Listening instead of Playing; Discord controls the icon
+and layout actually rendered by each client.

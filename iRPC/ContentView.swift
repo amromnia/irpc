@@ -8,6 +8,7 @@ struct ContentView: View {
     @ObservedObject private var refresh = BackgroundRefreshController.shared
     @AppStorage("presence.sessionMinutes") private var sessionMinutes = 120
     @AppStorage("sharing.pollSeconds") private var pollSeconds = 15
+    @AppStorage("sharing.trackTransitionSeconds") private var trackTransitionSeconds = 30
     @AppStorage("appearance.accent") private var accentHex = "E44950"
     @AppStorage("appearance.mode") private var appearance = 0
     @AppStorage("appearance.vaporStyle") private var vaporStyle = "wisps"
@@ -242,6 +243,11 @@ struct ContentView: View {
                         Text("2 hours").tag(120)
                         Text("4 hours").tag(240)
                     }.disabled(background.isRunning)
+                    Picker("Track transition timeout", selection: $trackTransitionSeconds) {
+                        Text("15 seconds").tag(15)
+                        Text("30 seconds").tag(30)
+                        Text("1 minute").tag(60)
+                    }
                     Picker("Resend interval", selection: $pollSeconds) {
                         Text("5 seconds").tag(5)
                         Text("15 seconds").tag(15)
