@@ -17,14 +17,10 @@ let package = Package(
 			name: "DiscordSocialKit",
 			targets: ["DiscordSocialKit"])
 	],
-	dependencies: [
-		.package(url: "https://github.com/rryam/MusadoraKit", exact: "6.1.0")
-	],
 	targets: [
 		.target(
 			name: "DiscordSocialKit",
 			dependencies: [
-				"MusadoraKit",
 				"discord_partner_sdk",
 			],
             swiftSettings: portable ? [.define("IRPC_XTOOL")] : []),

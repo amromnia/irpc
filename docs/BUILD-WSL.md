@@ -60,11 +60,11 @@ copied to the Windows checkout's ignored `build/Afterglow-unsigned.ipa`.
 No storyboards, XIBs, app intents, SwiftUI previews, generated asset references,
 or additional app macro models were found. Core iOS frameworks remain linked;
 the portability change concerns the build host, not replacing iOS frameworks.
-Swift package sources still use MusadoraKit/MusicKit and NowPlayingKit.
+Music playback and artwork use native MusicKit/MediaPlayer and NowPlayingKit.
 
 ScrobbleKit had no app source consumers; LaunchAtLogin-Modern was an unused
 macOS-oriented package reference. Both were removed after checking usage.
-MusadoraKit is fixed to 6.1.0 and NowPlayingKit to revision
+Unused MusadoraKit references have also been removed. NowPlayingKit is pinned to revision
 `6b18f98ae1e0e23ff4f6dc8b63d6e321aa5aede6`. DiscordSocialKit is a maintained local
 fork under `Vendor/DiscordSocialKit`, rather than a mutable remote checkout.
 See [its fork notes](../Vendor/DiscordSocialKit/FORK.md) for source provenance,
@@ -181,7 +181,7 @@ Multi-account OAuth/live presence and visual behavior remain device tests.
 
 ## 1.1: native motion and Live Activity extension
 
-Both application targets embed `AfterglowStatus.appex`. Version/build are 1.4/5
+Both application targets embed `AfterglowStatus.appex`. Version/build are 1.5/6
 for app and extension. The unsigned WSL configuration propagates
 `CODE_SIGNING_ALLOWED = NO` through the generated xcconfig, including the embedded
 extension; ordinary configuration omits that override. The bundle verifier checks
@@ -220,3 +220,11 @@ The unsigned app and embedded extension report version 1.4/build 5. The playback
 state regression check now includes cold-launch state seeding and precedence of
 subsequent native notifications. Startup UI/permission timing still needs a device
 check with a song already playing before launching the app.
+
+## 1.5: dependency cleanup
+
+Removed unused MusadoraKit declarations from both app targets and the local
+DiscordSocialKit package, including its obsolete package lockfile. The resolved
+WSL package graph now contains only DiscordSocialKit and NowPlayingKit.
+The local unsigned release build and `scripts/verify-ipa.py` passed for app and
+extension version 1.5/build 6. Output: `build/Afterglow-1.5-unsigned.ipa`.

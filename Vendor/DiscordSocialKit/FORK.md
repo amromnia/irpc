@@ -19,7 +19,8 @@ Focused changes:
   Token exchange results are checked before storage; failed writes abort login.
   Sign-out deletes credentials, disconnects, and rejects late token writes until
   another authorization is started.
-- MusadoraKit is pinned to 6.1.0. Upstream binary frameworks remain unchanged.
+- The unused MusadoraKit dependency was removed; music/artwork resolution now
+  belongs to the app. Upstream binary frameworks remain unchanged.
 
 No cloud synchronization is added. iRPC's Xcode configuration already explicitly
 disables CloudKit. Keychain uses a bundle-scoped service, no shared access group,

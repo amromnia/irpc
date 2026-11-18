@@ -111,7 +111,7 @@ artist, countdown, and sharing status on the Lock Screen / Dynamic Island. Tap i
 to reopen the app. It does not extend background execution. Status becomes stale
 after 90 seconds without an update, and respects user dismissal for that session.
 It is a Live Activity, not a Home Screen widget, and needs no App Group or push
-server. About contains only the app version. This release is **1.4, build 5**.
+server. About contains only the app version. This release is **1.5, build 6**.
 
 ## Background behavior and artwork
 
@@ -219,3 +219,9 @@ then take precedence, preserving the 1.3 pause/resume behavior. The playback ico
 reflects Music itself, independently of the sharing switch. If Music is playing but
 sharing is off, **Start sharing** enables presence without interrupting the song.
 Pause pauses Music and stops sharing. No playback command is issued during startup.
+
+## 1.5 dependency cleanup
+
+Removed unused MusadoraKit references from both app targets and the local
+DiscordSocialKit package. Music playback and artwork use Apple frameworks and
+NowPlayingKit; NowPlayingKit has no external package dependencies.
