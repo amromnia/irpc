@@ -464,6 +464,7 @@ final class PresenceStore: ObservableObject {
             "Music item ID: \(playback.id)",
             "Playback store ID: \(playbackStoreID ?? "nil")",
             "App bundle: \(Bundle.main.bundleIdentifier ?? "nil")",
+            "Discord SDK: \(DiscordManager.sdkVersion)",
             "Music authorization: \(MusicAuthorization.currentStatus)",
             "Playback UI: \(playing ? "playing" : "paused")",
             "MediaPlayer state: \(mediaPlayer.playbackState.rawValue)",

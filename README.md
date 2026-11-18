@@ -111,7 +111,7 @@ artist, countdown, and sharing status on the Lock Screen / Dynamic Island. Tap i
 to reopen the app. It does not extend background execution. Status becomes stale
 after 90 seconds without an update, and respects user dismissal for that session.
 It is a Live Activity, not a Home Screen widget, and needs no App Group or push
-server. About contains only the app version. This release is **1.7, build 8**.
+server. About contains only the app version. This release is **1.8, build 9**.
 
 ## Background behavior and artwork
 
@@ -245,3 +245,12 @@ immediately. Settings → Sharing → Track transition timeout selects 15, 30
 cannot renew that timeout. Stop sharing still clears immediately.
 Activity type is now Listening instead of Playing; Discord controls the icon
 and layout actually rendered by each client.
+
+## 1.8 Discord SDK update
+
+The app now bundles Discord Social SDK **1.11.24259**, replacing the inherited
+unversioned device/simulator frameworks. The Swift wrapper uses the safer current
+user API, releases owned metadata strings/handles, and requests animated avatars
+with a PNG static format. Artwork diagnostics include the runtime SDK version.
+The IPA verifier checks the embedded SDK against its pinned release hash.
+Listening activity and the bounded waiting state remain enabled.

@@ -27,6 +27,10 @@ private let releaseDiscordCallback: Discord_FreeFn = { pointer in
 
 @MainActor
 public final class DiscordManager: ObservableObject {
+    public static var sdkVersion: String {
+        "\(Discord_Client_GetVersionMajor()).\(Discord_Client_GetVersionMinor()).\(Discord_Client_GetVersionPatch())"
+    }
+
 	// Thread-safe client reference using a lock
 	private let clientLock = NSLock()
 	private var _client: UnsafeMutablePointer<Discord_Client>?
@@ -100,7 +104,8 @@ public final class DiscordManager: ObservableObject {
 		guard let client = getClient() else { return }
 
 		var userHandle = Discord_UserHandle(opaque: nil)
-		Discord_Client_GetCurrentUser(client, &userHandle)
+        guard Discord_Client_GetCurrentUserV2(client, &userHandle) else { return }
+        defer { Discord_UserHandle_Drop(&userHandle) }
 
 		// Get user ID first
 		let userId = Discord_UserHandle_Id(&userHandle)
@@ -108,6 +113,7 @@ public final class DiscordManager: ObservableObject {
 
 		// Get username
 		var usernameStr = Discord_String()
+        defer { Discord_Free(usernameStr.ptr) }
 		let _ = Discord_UserHandle_Username(&userHandle, &usernameStr)
 
 		let username = {
@@ -127,6 +133,7 @@ public final class DiscordManager: ObservableObject {
 
 		// Get display name
 		var displayNameStr = Discord_String()
+        defer { Discord_Free(displayNameStr.ptr) }
 		let _ = Discord_UserHandle_DisplayName(&userHandle, &displayNameStr)
 
 		let globalName = {
@@ -146,10 +153,11 @@ public final class DiscordManager: ObservableObject {
 
 		// Get avatar URL
 		var avatarUrlStr = Discord_String()
+        defer { Discord_Free(avatarUrlStr.ptr) }
 		let _ = Discord_UserHandle_AvatarUrl(
 			&userHandle,
-			Discord_UserHandle_AvatarType_Png,
 			Discord_UserHandle_AvatarType_Gif,
+			Discord_UserHandle_AvatarType_Png,
 			&avatarUrlStr
 		)
 
@@ -280,7 +288,7 @@ public final class DiscordManager: ObservableObject {
     }()
 
 	private func setupClient() {
-		print("🚀 Initializing Discord SDK...")
+		print("Initializing Discord SDK \(Self.sdkVersion)")
 
 		// Create client and retain pointer
 		let client = UnsafeMutablePointer<Discord_Client>.allocate(capacity: 1)

@@ -297,3 +297,20 @@ Regression: `bash scripts/check-presence.sh` also checks fixed transition
 deadlines, stale polls after timeout, reset, and configurable later transitions.
 
 SDK activity-type release notes: https://discord.com/developers/docs/social-sdk/release_notes.html
+
+## 1.8: official SDK 1.11.24259
+
+Replaced both vendored iOS framework slices and their headers with the official
+release XCFramework from the user-supplied Developer Portal ZIP. Runtime SDK
+version is included in artwork diagnostics. Listening support no longer relies
+on the inherited unversioned SDK. Existing presence-only scopes, per-account
+storage, serial callback pump, and transition timers remain in use.
+
+The wrapper now uses nullable `Discord_Client_GetCurrentUserV2`, releases the
+owned user handle and metadata strings according to the supplied C++ wrapper,
+and supplies GIF as the animated avatar type and PNG as the static type.
+The official timestamp declarations confirm milliseconds since Unix epoch,
+so countdown values retain that unit. IPA verification pins the embedded SDK's
+hash to `Vendor/DiscordSocialKit/SDK.json`. Native Discord login, simultaneous
+accounts, Listening rendering, and track transition behavior still need a phone
+test; compiling and inspecting the IPA cannot prove live service behavior.

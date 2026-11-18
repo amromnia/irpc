@@ -1,0 +1,11 @@
+{
+  "version": "1.11.24259",
+  "archive": "DiscordSocialSdk-1.11.24259.zip",
+  "archive_sha256": "5a42c7b0f8b192ad7ddc470c3fae4d206f12c726c1e4012cab2eb56836f02306",
+  "source": "User-provided download from Discord Developer Portal",
+  "distribution": "lib/release/discord_partner_sdk.xcframework",
+  "binary_sha256": {
+    "ios-arm64": "445e2261b7f001d04f6b467b982e899ce173dc03894bc7a185ce6cebc3a5509f",
+    "ios-arm64-simulator": "b4e94f6d8f1cbf796667b11f24ac5fe3adfd68083553191470033124730f2c1a"
+  }
+}

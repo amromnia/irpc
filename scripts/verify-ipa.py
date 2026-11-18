@@ -40,8 +40,8 @@ def verify(path):
         assert info["PresenceDiscordApplicationID"] == identity["DISCORD_APPLICATION_ID"]
         assert info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["discord-" + identity["DISCORD_APPLICATION_ID"]]
         assert info["MinimumOSVersion"] == "17.6"
-        assert info["CFBundleShortVersionString"] == "1.7"
-        assert info["CFBundleVersion"] == "8"
+        assert info["CFBundleShortVersionString"] == "1.8"
+        assert info["CFBundleVersion"] == "9"
         assert info["NSSupportsLiveActivities"] is True
         assert info["CADisableMinimumFrameDurationOnPhone"] is True
         status_prefix = prefix + "PlugIns/AfterglowStatus.appex/"
@@ -76,17 +76,25 @@ def verify(path):
         assert glyph.startswith(b"\x89PNG\r\n\x1a\n"), "Missing/invalid Discord glyph PNG"
         assert struct.unpack_from(">I", glyph, 16)[0] == 96, "Unexpected Discord glyph resolution"
         binary = archive.read(prefix + info["CFBundleExecutable"])
+        runtime_paths = []
         offset = 32
         for _ in range(struct.unpack_from("<I", binary, 16)[0]):
             command, size = struct.unpack_from("<II", binary, offset)
             assert command != 0x1D, "Expected app executable without a code signature"
+            if command == 0x8000001C:  # LC_RPATH
+                start = offset + struct.unpack_from("<I", binary, offset + 8)[0]
+                runtime_paths.append(binary[start:offset + size].split(b"\0", 1)[0].decode())
             offset += size
+        assert "/usr/lib/swift" in runtime_paths, "Discord SDK's Swift CoreMedia runtime needs the system Swift search path"
         dependencies = dylibs(binary)
         assert not any("SwiftData" in name for name in dependencies), dependencies
         for required in ("MusicKit", "BackgroundTasks", "discord_partner_sdk"):
             assert any(required in name for name in dependencies), (required, dependencies)
         framework = prefix + "Frameworks/discord_partner_sdk.framework/discord_partner_sdk"
         assert framework in names, "Discord dynamic framework was not embedded"
+        sdk = json.loads((ROOT / "Vendor/DiscordSocialKit/SDK.json").read_text())
+        assert hashlib.sha256(archive.read(framework)).hexdigest() == sdk["binary_sha256"]["ios-arm64"], "Bundled Discord SDK differs from the pinned release"
+        print("Discord SDK:", sdk["version"])
         print("Verified:", path)
         print("Bundle:", info["CFBundleIdentifier"], "minimum iOS", info["MinimumOSVersion"])
         print("Linked libraries:", *dependencies, sep="\n  ")

@@ -20,7 +20,14 @@ Focused changes:
   Sign-out deletes credentials, disconnects, and rejects late token writes until
   another authorization is started.
 - The unused MusadoraKit dependency was removed; music/artwork resolution now
-  belongs to the app. Upstream binary frameworks remain unchanged.
+  belongs to the app.
+- Discord's inherited binaries were replaced with the official 1.11.24259 release
+  XCFramework from the user-provided Developer Portal download. Both device and
+  simulator slices and their headers are replaced together. `SDK.json` records
+  the archive and binary hashes; `License-Notices.txt` preserves the release's notices.
+- Account metadata uses `GetCurrentUserV2` and drops its optional handle safely.
+  Owned metadata strings are freed, and avatar arguments use animated GIF/static
+  PNG in the SDK's documented order. Diagnostics report the runtime SDK version.
 
 No cloud synchronization is added. iRPC's Xcode configuration already explicitly
 disables CloudKit. Keychain uses a bundle-scoped service, no shared access group,
@@ -30,15 +37,32 @@ the portable build cannot read or migrate the SwiftData database. Existing nativ
 records are left intact. Sign out in each backend to delete that backend's record.
 Re-signing with another team/bundle ID can change Keychain access.
 
-Unmodified SDK executable SHA-256 values:
+## Discord Social SDK 1.11.24259
+
+Source: `DiscordSocialSdk-1.11.24259.zip`, downloaded by the user from the Discord
+Developer Portal and provided under `build/`. The archive is not committed.
+Only the official **release iOS XCFramework** is included; macOS, Android, Linux,
+Windows, debug builds, and optional Krisp voice processing are not imported.
+The iOS library has no required Krisp load dependency; the app does not use voice.
+The SDK binary and headers are copied byte-for-byte, without binary patching.
+Each slice's module map exposes `cdiscord.h` directly: the official umbrella
+also includes the C++ wrapper unconditionally, which fails pure Swift/C module
+scanning in xtool (`atomic` not found). We consume only the C API, so no C++
+interoperability or extra C++ header search paths are needed. This module map
+adjustment applies to both Xcode and portable builds.
 
 | Slice | SHA-256 |
 | --- | --- |
-| ios-arm64 | `ea9c7a1b046836f7116fd40498de099374a624f638a5d52ed15c87fba8238959` |
-| ios-arm64-simulator | `cc0b534ca6827b8a32a9825f044ed8e4ed1d9c59e9c551f1c288f3497c4826c5` |
+| ios-arm64 | `445e2261b7f001d04f6b467b982e899ce173dc03894bc7a185ce6cebc3a5509f` |
+| ios-arm64-simulator | `b4e94f6d8f1cbf796667b11f24ac5fe3adfd68083553191470033124730f2c1a` |
 
-These identify the inherited binaries; they do not verify provenance against an
-official Discord distribution. Original upstream source headers are retained.
+`SDK.json` also records the source archive SHA-256. `scripts/verify-ipa.py`
+checks that the embedded device SDK matches the pinned release exactly.
+This establishes equality to the supplied download; no independent publisher
+signature verification is claimed. The old unversioned upstream executables
+remain available in Git history. Original wrapper source headers are retained.
+
+Release notes: https://discord.com/developers/docs/social-sdk/release_notes.html
 
 ## Multiple-account integration
 

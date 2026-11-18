@@ -1,6 +1,6 @@
 # Local Afterglow Windows/WSL build
 
-Verified November 17, 2026 on Windows 11 + WSL2 Ubuntu with Swift 6.4.1,
+Verified November 18, 2026 on Windows 11 + WSL2 Ubuntu with Swift 6.4.1,
 Xcode 27.1's extracted Darwin/iOS SDK, and xtool 2.0.0-beta.1. All compilation,
 resource conversion, linking, and IPA packaging run locally. No Mac or hosted
 build is involved. The original `iRPC.xcodeproj` remains the build input.
@@ -32,7 +32,7 @@ The script finishes by checking the IPA structure, icon bytes, Discord PNG,
 configured bundle identifier (default `com.amromnia.afterglow`), minimum iOS (`17.6`), Music usage
 description, background task settings, linked libraries, embedded Discord
 framework, and absence of an app code signature/provisioning profile/SwiftData
-link/catalog JSON files. The SDK framework's inherited signature is not treated
+link/catalog JSON files. Any SDK framework signature is not treated
 as an app signature; your signer must re-sign embedded frameworks too.
 
 The implementation was tested in `/home/amr/ios-projects/irpc-xtool-build`, an
@@ -68,7 +68,7 @@ Unused MusadoraKit references have also been removed. NowPlayingKit is pinned to
 `6b18f98ae1e0e23ff4f6dc8b63d6e321aa5aede6`. DiscordSocialKit is a maintained local
 fork under `Vendor/DiscordSocialKit`, rather than a mutable remote checkout.
 See [its fork notes](../Vendor/DiscordSocialKit/FORK.md) for source provenance,
-storage details, and unchanged binary hashes.
+storage details, and the pinned official SDK binary hashes.
 
 ## Resources and designer updates
 
@@ -158,9 +158,11 @@ Successful compilation does not prove those runtime behaviors.
 
 The local linker still emits warnings about its platform support and some
 auto-linked SDK frameworks. The actual link succeeds using real SDK libraries;
-no private framework or stub was added. The inherited Discord SDK binary remains
-a provenance trust question from the earlier review. Normal Xcode builds retain
-their storage/catalog path but have not been run on macOS during this work.
+no private framework or stub was added. The inherited Discord SDK has now been
+replaced by official release 1.11.24259 from the user-provided Developer Portal
+archive, with archive/binary hashes recorded in `Vendor/DiscordSocialKit/SDK.json`.
+Normal Xcode builds retain their storage/catalog path but have not been run on
+macOS during this work.
 
 ## Public configuration and rebranding
 
@@ -181,7 +183,7 @@ Multi-account OAuth/live presence and visual behavior remain device tests.
 
 ## 1.1: native motion and Live Activity extension
 
-Both application targets embed `AfterglowStatus.appex`. Version/build are 1.7/8
+Both application targets embed `AfterglowStatus.appex`. Version/build are 1.8/9
 for app and extension. The unsigned WSL configuration propagates
 `CODE_SIGNING_ALLOWED = NO` through the generated xcconfig, including the embedded
 extension; ordinary configuration omits that override. The bundle verifier checks
@@ -251,3 +253,23 @@ Device checks remain: normal track → waiting → next track, timeout at the
 selected 15/30/60 seconds, immediate explicit stop, and Listening rendering in
 Discord. The SDK binary is inherited and unversioned; Listening may require an
 SDK upgrade if Discord continues to render Playing.
+
+## 1.8: Discord Social SDK 1.11.24259
+
+Imported the official release iOS XCFramework from the user-supplied ZIP,
+including its arm64 device/simulator slices. Only module maps are adjusted to
+expose `cdiscord.h` directly for Swift: the official umbrella unconditionally
+imports C++ headers, which produced `atomic` not found during module scanning.
+The binary and headers remain byte-for-byte identical to the archive.
+The new library's native version functions report 1.11.24259.
+
+Presence/transition, token-storage, and account checks passed, followed by the
+local unsigned release build and IPA verification. The verifier checks the
+embedded SDK hash and `/usr/lib/swift` runtime search path needed by the new
+SDK's Swift CoreMedia dependency. App/extension version is 1.8/build 9.
+Output: `build/Afterglow-1.8-unsigned.ipa`.
+
+SHA-256: `f06efe66f23a19ed405e7ea8752030c57eff168b74fa232d656c0e2a47576bac`.
+Live device tests remain for fresh/restored Discord login, simultaneous accounts,
+Listening rendering, and track transitions. Native Xcode/macOS and simulator
+execution were not run here.

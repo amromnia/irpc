@@ -1,0 +1,3 @@
+# Preserve the official distribution bytes across Windows/Linux checkouts.
+Frameworks/** -text
+License-Notices.txt -text
