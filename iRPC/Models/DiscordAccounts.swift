@@ -55,7 +55,7 @@ final class DiscordAccount: ObservableObject, Identifiable {
         }
     }
 
-    var name: String { discord.globalName ?? discord.username ?? "Account \(id)" }
+    var name: String { discord.globalName ?? discord.username ?? "Discord account" }
     var ready: Bool { selected && discord.isAuthenticated && discord.isReady }
     var status: String {
         if let storageError { return storageError }
@@ -75,8 +75,9 @@ final class DiscordAccount: ObservableObject, Identifiable {
         }
     }
 
-    func signOut() {
-        do { try discord.signOut(); storageError = nil }
-        catch { storageError = "Couldn't remove saved credentials. Try again." }
+    @discardableResult
+    func signOut() -> Bool {
+        do { try discord.signOut(); storageError = nil; return true }
+        catch { storageError = "Couldn't remove saved credentials. Try again."; return false }
     }
 }

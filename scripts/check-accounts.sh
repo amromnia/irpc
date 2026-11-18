@@ -3,5 +3,6 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 mkdir -p build
 swiftc Vendor/DiscordSocialKit/Sources/DiscordSocialKit/Storage/DiscordCredentialScope.swift \
+  iRPC/Models/AccountRegistry.swift iRPC/Models/AutoStartPolicy.swift \
   tests/account-scope-check.swift -o build/account-scope-check
 build/account-scope-check

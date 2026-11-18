@@ -41,8 +41,8 @@ def verify(path):
         assert info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["discord-" + identity["DISCORD_APPLICATION_ID"]]
         assert info["MinimumOSVersion"] == "17.6"
         assert info["NSAppleMusicUsageDescription"]
-        assert info["BGTaskSchedulerPermittedIdentifiers"] == [info["CFBundleIdentifier"] + ".presence"]
-        assert "processing" in info["UIBackgroundModes"]
+        assert info["BGTaskSchedulerPermittedIdentifiers"] == [info["CFBundleIdentifier"] + ".presence", info["CFBundleIdentifier"] + ".refresh"]
+        assert {"processing", "fetch"}.issubset(info["UIBackgroundModes"])
         assert info["CFBundleIcons"]["CFBundlePrimaryIcon"]["CFBundleIconFiles"]
         assert prefix + "embedded.mobileprovision" not in names, "Expected an unsigned/unprovisioned bundle"
         assert not any(n.startswith(prefix) and n.endswith("Contents.json") for n in names), "Catalog JSON leaked into bundle"

@@ -10,8 +10,8 @@ No client secret belongs in the app.
 
 The original 30-minute cutoff was imposed by iRPC's loop, not a fixed OS limit.
 The app now offers 30 minutes, 2 hours (default), and 4 hours, remembered locally.
-It submits one finite job with the corresponding number of 15-second polling
-intervals; requests can add to the actual duration. The system may expire it early.
+It submits one finite job with the corresponding number of configured polling
+intervals (5, 15, or 30 seconds); requests can add to the actual duration. The system may expire it early.
 
 Apple's [continued-processing guide](https://developer.apple.com/documentation/backgroundtasks/performing-long-running-tasks-on-ios-and-ipados)
 requires a foreground user action and progress reporting. Background session
@@ -27,14 +27,25 @@ player samples, for up to 30 seconds of prediction. New samples and seeks correc
 the estimate; clearing presence resets the prediction. Invalid/unknown durations
 do not produce a fabricated end timestamp.
 
-Previously the SDK wrapper ignored `artworkURL` from the current MusicKit entry
-and always fetched the song/album again. It now prefers that HTTPS URL, then a
-cached URL, then catalog artwork if needed. This avoids unnecessary catalog
-requests for library-only songs that already have artwork. There is no guarantee
-an external URL is reachable from Discord. A question-mark placeholder can remain
-when no fetchable artwork exists and the application's fallback icon is missing.
-Changing the application icon requires access to that application's portal;
-external album URLs do not.
+The app's Music screen now reads `currentEntry.artwork` and the underlying
+`Song.artwork`/`MusicVideo.artwork`, then renders the Artwork object with native
+[ArtworkImage](https://developer.apple.com/documentation/musickit/artworkimage).
+The upstream playback helper only extracts queue-entry artwork, leaving a gap when
+the Song carries artwork separately. Apple also recommends ArtworkImage over a
+custom AsyncImage path in [this framework discussion](https://developer.apple.com/forums/thread/685311).
+This source inspection does not prove which condition occurred on the user's phone.
+
+While the affected song is playing, use **Settings → Artwork diagnostics → Check
+artwork**. The report distinguishes missing objects, missing generated URLs,
+non-HTTP native resources, HTTP failures, and image-decoding failures. Query strings
+are removed from displayed/copied URLs. A successful diagnostic HTTP request still
+does not prove native rendering or Discord-side downloading succeeded.
+
+Discord uses a URL asset separately. The SDK wrapper prefers the MusicKit URL,
+then its cached/catalog artwork policy. Discord must fetch the image itself; an
+in-app success does not establish Discord reachability. Uploading your application
+icon in the Developer Portal configures the app's default icon, including the
+question-mark case where no usable artwork is supplied.
 
 See [Discord's asset guide](https://discord.com/developers/discord-social-sdk/development-guides/setting-rich-presence)
 for asset keys and externally hosted image URLs. The activity name's C-string
@@ -55,7 +66,7 @@ whether Discord shows another activity. Do not share tokens or authorization cod
 
 Stale catalog lookups and callbacks are invalidated by a presence generation number
 so they cannot submit an older update after a clear or a newer update. Each account
-has its own presence generation. Stop clears both account presences, while
+has its own presence generation. Stop clears all account presences, while
 disconnect clears only that account. These are correctness improvements; they are not proof of the reported startup cause.
 
 ## Verification
@@ -68,3 +79,16 @@ the new policy. `bash scripts/check-token-storage.sh` covers credential serializ
 and expiry. The unsigned IPA is compiled and inspected locally using the WSL build
 script. Full session runtime, Discord-side image fetching, startup reliability, and
 visual countdown behavior still require an iPhone/Discord test.
+
+## Optional background refresh
+
+Settings can request [BGAppRefreshTask](https://developer.apple.com/documentation/backgroundtasks/bgapprefreshtaskrequest)
+opportunities after sharing starts. iOS decides when or whether to launch them;
+the requested 15-minute earliest time is not a periodic timer. Each wake restores
+saved credentials, waits a bounded time for connection, samples Music once, and
+attempts publication. It does not open interactive authentication. Stop sharing
+cancels pending work. OS expiration cancels the current refresh operation.
+
+Auto-start on opening is separate: it attempts once per foreground visit after
+permissions/accounts are ready. A manual stop suppresses another attempt during
+that visit. Neither feature silently renews a continued-processing job.

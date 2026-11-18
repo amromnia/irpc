@@ -13,6 +13,19 @@ import SwiftData
 #endif
 import discord_partner_sdk
 
+private let discordCallbackQueue = DispatchQueue(label: "afterglow.discord.callbacks", qos: .utility)
+private final class DiscordCallbackReference {
+    weak var manager: DiscordManager?
+    init(_ manager: DiscordManager) { self.manager = manager }
+}
+private func callbackManager(_ pointer: UnsafeMutableRawPointer?) -> DiscordManager? {
+    guard let pointer else { return nil }
+    return Unmanaged<DiscordCallbackReference>.fromOpaque(pointer).takeUnretainedValue().manager
+}
+private let releaseDiscordCallback: Discord_FreeFn = { pointer in
+    if let pointer { Unmanaged<DiscordCallbackReference>.fromOpaque(pointer).release() }
+}
+
 @MainActor
 public final class DiscordManager: ObservableObject {
 	// Thread-safe client reference using a lock
@@ -177,7 +190,7 @@ public final class DiscordManager: ObservableObject {
 
 	private let statusCallback: Discord_Client_OnStatusChanged = {
 		status, error, errorDetail, userData in
-		let manager = Unmanaged<DiscordManager>.fromOpaque(userData!).takeUnretainedValue()
+		guard let manager = callbackManager(userData) else { return }
 		print("🔄 Status changed: \(status)")
 
 		Task { @MainActor in
@@ -257,13 +270,12 @@ public final class DiscordManager: ObservableObject {
         userId = 0
     }
 
-    private static let callbackPump: Void = {
-        DispatchQueue.global(qos: .utility).async {
-            while true {
-                autoreleasepool { Discord_RunCallbacks() }
-                Thread.sleep(forTimeInterval: 0.01)
-            }
-        }
+    private static let callbackPump: DispatchSourceTimer = {
+        let timer = DispatchSource.makeTimerSource(queue: discordCallbackQueue)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(10))
+        timer.setEventHandler { autoreleasepool { Discord_RunCallbacks() } }
+        timer.resume()
+        return timer
     }()
 
 	private func setupClient() {
@@ -305,10 +317,10 @@ public final class DiscordManager: ObservableObject {
 		}
 		Discord_Client_AddLogCallback(client, logCallback, nil, nil, Discord_LoggingSeverity_Info)
 
-		let userDataPtr = Unmanaged.passRetained(self).toOpaque()
-		Discord_Client_SetStatusChangedCallback(client, statusCallback, nil, userDataPtr)
+		let userDataPtr = Unmanaged.passRetained(DiscordCallbackReference(self)).toOpaque()
+		Discord_Client_SetStatusChangedCallback(client, statusCallback, releaseDiscordCallback, userDataPtr)
 
-        // RunCallbacks drains all clients. One serial pump serves both accounts.
+        // RunCallbacks drains all clients. One serial pump serves all accounts.
         _ = Self.callbackPump
 
 		print("✨ Discord SDK initialized successfully")
@@ -344,8 +356,8 @@ public final class DiscordManager: ObservableObject {
 		Discord_AuthorizationCodeVerifier_Challenge(verifier, &challenge)
 		Discord_AuthorizationArgs_SetCodeChallenge(&args, &challenge)
 
-		let userDataPtr = Unmanaged.passRetained(self).toOpaque()
-		Discord_Client_Authorize(client, &args, self.authCallback, nil, userDataPtr)
+		let userDataPtr = Unmanaged.passRetained(DiscordCallbackReference(self)).toOpaque()
+		Discord_Client_Authorize(client, &args, self.authCallback, releaseDiscordCallback, userDataPtr)
 	}
 
 	public func clearRichPresence() {
@@ -369,6 +381,18 @@ public final class DiscordManager: ObservableObject {
         let generation: Int
 	}
 
+    private static let releasePresenceContext: Discord_FreeFn = { pointer in
+        guard let pointer else { return }
+        let context = pointer.assumingMemoryBound(to: RichPresenceContext.self)
+        context.pointee.namePtr.deallocate()
+        context.pointee.detailsPtr.deallocate()
+        context.pointee.statePtr.deallocate()
+        context.pointee.imagePtr?.deallocate()
+        context.pointee.imageTextPtr?.deallocate()
+        context.deinitialize(count: 1)
+        context.deallocate()
+    }
+
 	private static let richPresenceCallback:
 		@convention(c) (UnsafeMutablePointer<Discord_ClientResult>?, UnsafeMutableRawPointer?) ->
 			Void = { result, userData in
@@ -380,15 +404,7 @@ public final class DiscordManager: ObservableObject {
 				}
 
 				let context = contextPtr.pointee
-				defer {
-					print("🧹 Cleaning up Rich Presence buffers")
-					context.namePtr.deallocate()
-					context.detailsPtr.deallocate()
-					context.statePtr.deallocate()
-                    context.imagePtr?.deallocate()
-                    context.imageTextPtr?.deallocate()
-					contextPtr.deallocate()
-				}
+
 
                 let accepted = result.map { Discord_ClientResult_Successful($0) } ?? false
                 let manager = context.manager
@@ -546,7 +562,7 @@ public final class DiscordManager: ObservableObject {
         presenceStatus = "Waiting for Discord acknowledgement…"
 		print("🎵 Sending activity update to Discord...")
 		Discord_Client_UpdateRichPresence(
-			client, &activity, Self.richPresenceCallback, nil, contextPtr)
+			client, &activity, Self.richPresenceCallback, Self.releasePresenceContext, contextPtr)
 	}
 
 	public func updateCurrentPlayback(
@@ -686,6 +702,7 @@ public final class DiscordManager: ObservableObject {
 	}
 
 	public func refreshTokenIfNeeded() async {
+        guard getClient() != nil else { return }
 		guard let token = loadExistingToken(),
 			let refreshToken = token.refreshToken,
 			token.needsRefresh
@@ -701,13 +718,14 @@ public final class DiscordManager: ObservableObject {
 			applicationId,
 			refreshStr,
 			tokenCallback,
-			nil,
-			Unmanaged.passRetained(self).toOpaque()
+			releaseDiscordCallback,
+			Unmanaged.passRetained(DiscordCallbackReference(self)).toOpaque()
 		)
 	}
 
 	public func setupWithExistingToken() async {
 		await MainActor.run {
+            guard getClient() != nil else { return }
 			guard let token = loadExistingToken(),
 				let accessToken = token.accessToken
 			else {
@@ -731,13 +749,12 @@ public final class DiscordManager: ObservableObject {
 					Discord_AuthorizationTokenType_Bearer,
 					accessStr,
 					{ result, userData in
-						let manager = Unmanaged<DiscordManager>.fromOpaque(userData!)
-							.takeUnretainedValue()
+						guard let manager = callbackManager(userData) else { return }
 						print("🔑 Loaded token from storage, connecting to Discord...")
-						Discord_Client_Connect(manager.getClient())
+						if let client = manager.getClient() { Discord_Client_Connect(client) }
 					},
-					nil,
-					Unmanaged.passRetained(self).toOpaque()
+					releaseDiscordCallback,
+					Unmanaged.passRetained(DiscordCallbackReference(self)).toOpaque()
 				)
 			}
 		}
@@ -745,7 +762,7 @@ public final class DiscordManager: ObservableObject {
 
 	private let tokenCallback: Discord_Client_TokenExchangeCallback = {
 		result, token, refreshToken, tokenType, expiresIn, scope, userData in
-		let manager = Unmanaged<DiscordManager>.fromOpaque(userData!).takeUnretainedValue()
+		guard let manager = callbackManager(userData) else { return }
 
         guard let result, Discord_ClientResult_Successful(result) else {
             manager.handleError("Discord token exchange failed.")
@@ -775,19 +792,19 @@ public final class DiscordManager: ObservableObject {
 				    return
 				}
 
-				let accessStr = manager.makeDiscordString(from: tokenStr)
+				guard let client = manager.getClient() else { return }
+                let accessStr = manager.makeDiscordString(from: tokenStr)
 				Discord_Client_UpdateToken(
-					manager.getClient(),
+					client,
 					Discord_AuthorizationTokenType_Bearer,
 					accessStr,
 					{ result, userData in
-						let manager = Unmanaged<DiscordManager>.fromOpaque(userData!)
-							.takeUnretainedValue()
+						guard let manager = callbackManager(userData) else { return }
 						print("🔑 Token updated, connecting to Discord...")
-						Discord_Client_Connect(manager.getClient())
+						if let client = manager.getClient() { Discord_Client_Connect(client) }
 					},
-					nil,
-					Unmanaged.passRetained(manager).toOpaque()
+					releaseDiscordCallback,
+					Unmanaged.passRetained(DiscordCallbackReference(manager)).toOpaque()
 				)
 			}
 		} else {
@@ -797,7 +814,7 @@ public final class DiscordManager: ObservableObject {
 
 	private let authCallback: Discord_Client_AuthorizationCallback = {
 		result, code, redirectUri, userData in
-		let manager = Unmanaged<DiscordManager>.fromOpaque(userData!).takeUnretainedValue()
+		guard let manager = callbackManager(userData) else { return }
 
 		guard let result = result else {
 			manager.handleError("Authentication failed: No result received")
@@ -816,7 +833,9 @@ public final class DiscordManager: ObservableObject {
 					encoding: .utf8
 				)
 			{
-				manager.handleError("Authentication Error: \(messageStr)")
+				manager.handleError(messageStr.contains("invalid_scope")
+                    ? "Discord rejected the scopes. Enable Social SDK in your application's Getting Started page and submit the form. Required scopes: openid sdk.social_layer_presence."
+                    : "Authentication error: \(messageStr)")
 			} else {
 				manager.handleError("Authentication failed with unknown error")
 			}
@@ -834,7 +853,7 @@ public final class DiscordManager: ObservableObject {
 		// Token exchange callback
 		let tokenCallback: Discord_Client_TokenExchangeCallback = {
 			result, token, refreshToken, tokenType, expiresIn, scope, userData in
-			let manager = Unmanaged<DiscordManager>.fromOpaque(userData!).takeUnretainedValue()
+			guard let manager = callbackManager(userData) else { return }
 
             guard let result, Discord_ClientResult_Successful(result) else {
                 manager.handleError("Discord token exchange failed.")
@@ -867,71 +886,68 @@ public final class DiscordManager: ObservableObject {
 
 					// Then update client token
 					print("🔑 Updating client with new token...")
-					let accessStr = manager.makeDiscordString(from: tokenStr)
+					guard let client = manager.getClient() else { return }
+                let accessStr = manager.makeDiscordString(from: tokenStr)
 					Discord_Client_UpdateToken(
-						manager.getClient(),
+						client,
 						Discord_AuthorizationTokenType_Bearer,
 						accessStr,
 						{ result, userData in
 							print("🔌 Connecting with new token...")
-							let manager = Unmanaged<DiscordManager>.fromOpaque(userData!)
-								.takeUnretainedValue()
-							Discord_Client_Connect(manager.getClient())
+							guard let manager = callbackManager(userData) else { return }
+							if let client = manager.getClient() { Discord_Client_Connect(client) }
 						},
-						nil,
-						Unmanaged.passRetained(manager).toOpaque()
+						releaseDiscordCallback,
+						Unmanaged.passRetained(DiscordCallbackReference(manager)).toOpaque()
 					)
 				}
 			}
 		}
 
+		guard let client = manager.getClient() else { return }
 		Discord_Client_GetToken(
-			manager.getClient(),
+			client,
 			manager.applicationId,
 			code,
 			verifierStr,
 			redirectUri,
 			tokenCallback,
-			nil,
-			Unmanaged.passRetained(manager).toOpaque()
+			releaseDiscordCallback,
+			Unmanaged.passRetained(DiscordCallbackReference(manager)).toOpaque()
 		)
 	}
 
-	/// Call this method to manually release resources
-	public func shutdown() {
-		Task { @MainActor in
-			// Stop timer synchronously
-			updateTimer?.invalidate()
-			updateTimer = nil
+    /// Close a removed account's client after draining the callback queue.
+    /// Stored credentials are handled separately by TokenStorage.delete().
+    public func shutdown() {
+        acceptsTokenUpdates = false
+        presenceGeneration += 1
+        isRunning = false
+        updateTimer?.invalidate()
+        updateTimer = nil
+        clientLock.lock()
+        let client = _client
+        _client = nil
+        clientLock.unlock()
+        guard let client else { return }
+        discordCallbackQueue.sync {
+            Discord_Client_AbortAuthorize(client)
+            Discord_Client_Disconnect(client)
+            Discord_Client_Drop(client)
+            client.deallocate()
+        }
+    }
 
-			// Clear state
-			currentPlaybackInfo = nil
-			lastTitle = ""
-			lastArtist = ""
-			lastArtwork = nil
-			lastDuration = 0
-			lastCurrentTime = 0
-
-			// Clear presence and clean up client
-			clearRichPresence()
-		}
-	}
-
-	deinit {
-		// Basic cleanup that's safe to do in deinit
-		clientLock.lock()
-		let clientToCleanup = _client
-		_client = nil
-		clientLock.unlock()
-
-		if let clientToCleanup = clientToCleanup {
-			// Clear presence without callback
-			var activity = Discord_Activity()
-			Discord_Activity_Init(&activity)
-			Discord_Client_UpdateRichPresence(clientToCleanup, &activity, nil, nil, nil)
-
-			Discord_Client_Drop(clientToCleanup)
-			clientToCleanup.deallocate()
-		}
-	}
+    deinit {
+        clientLock.lock()
+        let client = _client
+        _client = nil
+        clientLock.unlock()
+        if let client {
+            discordCallbackQueue.async {
+                Discord_Client_Drop(client)
+                client.deallocate()
+            }
+        }
+    }
 }

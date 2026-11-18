@@ -1,6 +1,6 @@
 # Afterglow
 
-A small native iPhone app for sharing your Apple Music soundtrack on up to two
+A small native iPhone app for sharing your Apple Music soundtrack on multiple
 Discord accounts. Built with SwiftUI, with Liquid Glass controls on iOS 26,
 light/dark appearances, and a customizable accent color.
 
@@ -25,7 +25,13 @@ configuration, not a way to hide a secret. Never put a client secret, bot token,
 or user token here. Environment variables override `.env` values.
 
 In the [Discord Developer Portal](https://discord.com/developers/applications),
-open this application, enable **Public Client** under OAuth2, and add:
+open this application. Under **Social SDK → Getting Started**, complete and
+**submit** the setup form to enable Social SDK. The SDK requests exactly
+`openid sdk.social_layer_presence`; an `invalid_scope` error can indicate that
+Social SDK has not been activated. URL-generator checkboxes do not configure the
+SDK request. See [Discord setup](https://discord.com/developers/discord-social-sdk/getting-started)
+and [scope documentation](https://discord.com/developers/discord-social-sdk/core-concepts/oauth2-scopes).
+Enable **Public Client** under OAuth2, and add:
 
 ```text
 discord-1572242579049808028:/authorize/callback
@@ -59,38 +65,51 @@ it is not needed for local builds.
 ## Use
 
 1. Allow Music access, then play something in Apple Music.
-2. Connect Account 1 with Discord. To connect Account 2, switch to that user in
-   Discord first; if a browser opens, sign into the second user there.
-3. Choose which accounts should receive your music. Select a session length and
-   tap **Start sharing**. Both selected, ready accounts receive the same Music
-   snapshot; a disconnected account doesn't stop the other.
-4. Tap an account to see its update acknowledgement, reconnect, or disconnect it.
-   Disconnecting removes only that slot's saved credentials and clears its presence.
+2. Open **Accounts**, tap **+**, and connect Discord. Repeat for each account,
+   switching the active Discord/browser user before authorizing another user.
+3. Enable the accounts that should receive updates. On **Music**, tap the round
+   play button to start sharing; pause stops sharing and cancels refresh requests.
+4. Tap an account to view acknowledgements, reconnect, or remove it.
+5. **Settings** contains session length, update interval, auto-start on opening,
+   optional background refresh, appearance, and artwork diagnostics.
 
-The app rejects connecting the same Discord user to both slots. Each slot has its
-own client and credential store, isolated by bundle ID, application ID, and slot.
-The WSL build stores tokens in Keychain; ordinary Xcode builds use separate
-SwiftData stores. Cloud synchronization is explicitly disabled in both paths.
-Rebranding changes the default bundle ID and using your own OAuth application
-requires fresh sign-in; old upstream credentials are not imported.
+There is no fixed account-count cap. Each account has an independent SDK client
+and credential store; practical capacity depends on the device and Discord.
+Duplicate Discord users are rejected. Existing accounts from the two-slot build
+are discovered once and retained. Removed account IDs are never reused.
 
-The settings button opens accent/appearance controls. iOS 26 uses native Liquid
-Glass; older supported versions use material/standard controls. Reduce Transparency
-uses an opaque control surface. Minimum iOS is 17.6.
+Credential stores are isolated by bundle ID, application ID, and account ID.
+WSL builds use Keychain; normal Xcode builds use separate SwiftData stores.
+CloudKit synchronization is explicitly disabled in both paths. The local account
+registry contains only numeric IDs. Rebranding/changing the OAuth application can
+require fresh sign-in; upstream credentials are not imported.
 
-## Background behavior and limitations
+The bottom tab bar uses native Liquid Glass on iOS 26. Earlier supported systems
+use their standard tab bar. Minimum iOS is 17.6.
 
-On iOS 26+, sessions check Music approximately every 15 seconds, for a selected
-30 minutes, 2 hours, or 4 hours. The selected runtime is a finite app target, not
-an OS guarantee: iOS may stop the job early. Each new session starts from a
-foreground user action; there is no silent-audio fallback or automatic background
-renewal. Older iOS versions require keeping the app open.
+## Background behavior and artwork
 
-The countdown predicts for up to 30 seconds between fresh player observations and
-corrects on new samples/seeks. Artwork uses MusicKit's URL first; Discord still
-needs to fetch it. Discord acceptance is displayed per account and does not prove
-another client rendered the activity. Force-quitting may leave stale presence until
-Discord expires/clears it. See [presence notes](docs/PRESENCE.md).
+On iOS 26+, continued-processing sessions target 30 minutes, 2 hours, or 4 hours,
+with checks every 5, 15 (default), or 30 seconds. iOS may end a session early.
+Auto-start attempts sharing when opening the app once Music access and an account
+are ready. A manual stop suppresses auto-start until the next foreground visit.
+Continued-processing jobs are not automatically chained in the background.
+
+Optional background refresh requests short, system-scheduled opportunities while
+sharing is requested. Earliest scheduling is 15 minutes; actual timing can be much
+later or absent. It does not maintain a continuous connection or promise continuous
+presence. A refresh restores saved credentials, samples Music, and attempts a
+bounded publish. Stop sharing cancels pending refreshes. Foreground sharing also
+works on older supported iOS versions.
+
+The countdown predicts for up to 30 seconds and corrects on fresh samples/seeks.
+The Music screen uses native `MusicKit.ArtworkImage`, reading artwork from the
+queue entry and the underlying Song/MusicVideo. The playback dependency previously
+only inspected the queue-entry artwork. Settings → Artwork diagnostics reports
+which source exists, whether the generated URL works over HTTP, and whether the
+image decodes. URL query strings are omitted from copied diagnostics. This change
+has not yet established the cause of the reported artwork failure on a device.
+Discord image fetching is separate; see [presence notes](docs/PRESENCE.md).
 
 ## Verification
 
@@ -105,7 +124,7 @@ bash scripts/check-token-storage.sh
 bash scripts/check-presence.sh
 ```
 
-Live two-account OAuth, simultaneous Discord presence, long-session runtime, and
+Live multi-account OAuth, simultaneous Discord presence, long-session runtime, and
 visual/accessibility behavior need physical-device validation. Normal Xcode builds
 have not been run on macOS during this work. The inherited precompiled Discord SDK
 still has an unverified provenance question; see [fork notes](Vendor/DiscordSocialKit/FORK.md).

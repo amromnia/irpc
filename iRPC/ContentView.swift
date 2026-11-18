@@ -1,146 +1,118 @@
-import DiscordSocialKit
 import MusicKit
-import NowPlayingKit
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var store = PresenceStore()
+    @ObservedObject var store: PresenceStore
     @ObservedObject private var background = BackgroundController.shared
+    @ObservedObject private var refresh = BackgroundRefreshController.shared
     @AppStorage("presence.sessionMinutes") private var sessionMinutes = 120
+    @AppStorage("sharing.pollSeconds") private var pollSeconds = 15
     @AppStorage("appearance.accent") private var accentHex = "E44950"
     @AppStorage("appearance.mode") private var appearance = 0
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
-    @State private var settingsOpen = false
+    @State private var tab = 0
     @State private var selectedAccount: DiscordAccount?
 
     private var accent: Color { Color(afterglowHex: accentHex) }
-    private var surface: Color { Color(uiColor: .secondarySystemGroupedBackground) }
-    private var durationLabel: String { sessionMinutes == 30 ? "30 min" : "\(sessionMinutes / 60) hours" }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 30) {
-                    header
-                    if !store.musicAuthorized { musicPermission }
-                    artwork
-                    songDetails
-                    if !store.playback.id.isEmpty { timeline }
-                    accountSection
-                    if let error = store.error {
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(accent)
-                            Text(error).font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
-                            Button("Dismiss", systemImage: "xmark") { store.error = nil }
-                                .labelStyle(.iconOnly).font(.caption)
-                        }
-                        .padding(18).background(surface, in: RoundedRectangle(cornerRadius: 20))
-                    }
-                }
-                .padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 26)
-                .frame(maxWidth: 560)
-                .frame(maxWidth: .infinity)
-            }
-            .background {
-                ZStack(alignment: .topLeading) {
-                    Color(uiColor: .systemGroupedBackground)
-                    Circle().fill(accent.opacity(colorScheme == .dark ? 0.16 : 0.09))
-                        .frame(width: 340, height: 340).blur(radius: 90)
-                        .offset(x: -130, y: -100)
-                }.ignoresSafeArea()
-            }
-            .safeAreaInset(edge: .bottom) { sharingDock }
-            .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $settingsOpen) { settings }
-            .sheet(item: $selectedAccount) { account in
-                AccountDetailsView(account: account, accent: accent,
-                                   authorizing: store.authorizing, connect: { store.connect(account) })
-            }
+        TabView(selection: $tab) {
+            musicPage.tabItem { Label("Music", systemImage: "music.note") }.tag(0)
+            accountsPage.tabItem { Label("Accounts", systemImage: "person.2") }.tag(1)
+            settingsPage.tabItem { Label("Settings", systemImage: "gearshape") }.tag(2)
         }
         .tint(accent)
         .preferredColorScheme(appearance == 0 ? nil : (appearance == 1 ? .light : .dark))
+        .sheet(item: $selectedAccount) { account in
+            AccountDetailsView(account: account, accent: accent, authorizing: store.authorizing,
+                connect: { store.connect(account) }, remove: {
+                    if store.removeAccount(account) { selectedAccount = nil }
+                })
+        }
         .task {
             await store.start()
+            if scenePhase == .active { store.enteredForeground() }
             while !Task.isCancelled {
                 if !background.isRunning { await store.tick() }
                 do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            if #unavailable(iOS 26.0), phase == .background { store.stopSharing() }
-            if phase == .active { Task { await store.refreshPlayback() } }
+            if phase == .background { store.enteredBackground() }
+            if phase == .active { store.enteredForeground(); Task { await store.refreshPlayback() } }
         }
     }
 
-    private var header: some View {
-        HStack {
-            HStack(spacing: 11) {
-                AfterglowMark(color: accent).scaleEffect(0.75).frame(width: 40)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(AppIdentity.name).font(.system(.title2, design: .rounded, weight: .bold))
-                    Text("One soundtrack. Every profile.").font(.caption).foregroundStyle(.secondary)
+    private var musicPage: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 25) {
+                    if !store.musicAuthorized {
+                        Button("Allow Music access") { Task { await store.requestMusicAccess() } }
+                            .buttonStyle(.borderedProminent)
+                    }
+                    artwork
+                    songDetails
+                    if !store.playback.id.isEmpty { timeline }
+                    VStack(spacing: 12) {
+                        Button { store.toggleSharing(minutes: sessionMinutes) } label: {
+                            Image(systemName: store.sharing ? "pause.fill" : "play.fill")
+                                .font(.system(size: 28, weight: .semibold))
+                                .frame(width: 78, height: 78)
+                                .foregroundStyle(.white)
+                                .background(accent, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!store.sharing && (!store.musicAuthorized || store.readyAccounts.isEmpty))
+                        .opacity(!store.sharing && store.readyAccounts.isEmpty ? 0.4 : 1)
+                        .accessibilityLabel(store.sharing ? "Stop sharing" : "Start sharing")
+                        Text(store.sharing ? "Sharing · \(store.readyAccounts.count) accounts" : "Start sharing")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if store.readyAccounts.isEmpty {
+                            Button("Connect an account") { tab = 1 }.font(.subheadline)
+                        }
+                    }
+                    errorMessage
                 }
+                .padding(.horizontal, 26).padding(.vertical, 24)
+                .frame(maxWidth: 500).frame(maxWidth: .infinity)
             }
-            Spacer()
-            Button("Settings", systemImage: "slider.horizontal.3") { settingsOpen = true }
-                .labelStyle(.iconOnly).font(.system(size: 17, weight: .medium))
-                .frame(width: 44, height: 44)
-                .background(surface.opacity(0.8), in: Circle())
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle(AppIdentity.name)
+            .navigationBarTitleDisplayMode(.inline)
         }
-    }
-
-    private var musicPermission: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("A little permission. A lot of music.", systemImage: "music.note")
-                .font(.headline)
-            Text("Allow Music access to share the song playing on your iPhone.")
-                .font(.subheadline).foregroundStyle(.secondary)
-            Button("Connect Apple Music") { Task { await store.requestMusicAccess() } }
-                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
-            if let url = URL(string: UIApplication.openSettingsURLString) {
-                Button("Open Settings") { openURL(url) }.font(.footnote)
-            }
-        }
-        .padding(22).frame(maxWidth: .infinity, alignment: .leading)
-        .background(surface, in: RoundedRectangle(cornerRadius: 26))
     }
 
     private var artwork: some View {
-        ZStack(alignment: .bottomLeading) {
-            AsyncImage(url: store.playback.artworkURL) { phase in
-                if case .success(let image) = phase {
-                    image.resizable().scaledToFill()
-                } else {
-                    ZStack {
-                        LinearGradient(colors: [accent.opacity(0.8), accent.opacity(0.3), Color(uiColor: .systemBackground)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing)
-                        AfterglowMark().scaleEffect(2.7)
+        Group {
+            if let artwork = store.currentArtwork {
+                ArtworkImage(artwork, width: 270, height: 270)
+            } else {
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                    .overlay {
+                        VStack(spacing: 12) {
+                            Image(systemName: "music.note").font(.system(size: 42)).foregroundStyle(.secondary)
+                            if !store.playback.id.isEmpty {
+                                Text("No artwork supplied").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                     }
-                }
             }
-            .frame(width: 270, height: 270).clipped()
-            HStack(spacing: 7) {
-                Circle().fill(store.playing ? Color.green : Color.white.opacity(0.6)).frame(width: 6, height: 6)
-                Text(store.playing ? "NOW PLAYING" : (store.playback.id.isEmpty ? "READY WHEN YOU ARE" : (store.recentPlayback ? "RECENTLY PLAYED" : "PAUSED")))
-                    .font(.system(size: 9, weight: .bold)).tracking(1.6)
-            }
-            .foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 9)
-            .background(.black.opacity(0.55), in: Capsule()).padding(16)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 30))
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.13), radius: 24, y: 14)
-        .padding(.top, 8)
-        .accessibilityLabel(store.playing ? "Now playing artwork" : "Music artwork")
+        .frame(width: 270, height: 270)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .accessibilityLabel("Album artwork")
     }
 
     private var songDetails: some View {
         VStack(spacing: 8) {
             Text(store.playback.title).font(.system(.title2, design: .rounded, weight: .bold))
                 .multilineTextAlignment(.center).lineLimit(2)
-            Text(store.playback.artist.isEmpty ? "Play something you love in Apple Music." : store.playback.artist)
-                .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            if !store.playback.artist.isEmpty {
+                Text(store.playback.artist).font(.subheadline).foregroundStyle(.secondary)
+            }
             if let album = store.playback.album {
                 Text(album).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
             }
@@ -171,95 +143,97 @@ struct ContentView: View {
         }
     }
 
-    private var accountSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("YOUR ACCOUNTS").font(.system(size: 10, weight: .bold)).tracking(2).foregroundStyle(.secondary)
-                Spacer()
-                Text("\(store.readyAccounts.count) ready").font(.caption2).foregroundStyle(.secondary)
+    private var accountsPage: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 12) {
+                    if store.accounts.isEmpty {
+                        ContentUnavailableView("No accounts", systemImage: "person.crop.circle", description: Text("Add a Discord account."))
+                    }
+                    ForEach(store.accounts) { account in
+                        AccountRow(account: account, accent: accent, disabled: store.authorizing,
+                            musicPlaying: store.playing, details: { selectedAccount = account }, connect: { store.connect(account) })
+                    }
+                    errorMessage
+                }
+                .padding(20).frame(maxWidth: 600).frame(maxWidth: .infinity)
             }
-            ForEach(store.accounts) { account in
-                AccountRow(account: account, accent: accent, disabled: store.authorizing, musicPlaying: store.playing,
-                           details: { selectedAccount = account }, connect: { store.connect(account) })
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("Accounts")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Add account", systemImage: "plus") {
+                        if let account = store.addAccount() { store.connect(account) }
+                    }
+                    .disabled(store.authorizing)
+                }
             }
-            Text("One song, both profiles. Connect each Discord account separately.")
-                .font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 3)
         }
     }
 
-    private var sharingDock: some View {
-        VStack(spacing: 13) {
-            HStack {
-                HStack(spacing: 7) {
-                    Circle().fill(store.sharing ? Color.green : Color.secondary.opacity(0.5)).frame(width: 6, height: 6)
-                    Text(store.sharing ? "Sharing your soundtrack" : "Your soundtrack, shared.")
-                        .font(.caption).fontWeight(.medium)
-                }
-                Spacer(minLength: 8)
-                if #available(iOS 26.0, *) {
-                    Menu {
-                        Picker("Session length", selection: $sessionMinutes) {
-                            Text("30 minutes").tag(30)
-                            Text("2 hours").tag(120)
-                            Text("4 hours").tag(240)
-                        }
-                    } label: {
-                        Label(durationLabel, systemImage: "clock").font(.caption)
-                    }.disabled(store.sharing)
-                }
-            }
-            SharingButton(sharing: store.sharing,
-                          disabled: !store.sharing && (!store.musicAuthorized || store.readyAccounts.isEmpty)) {
-                store.toggleSharing(minutes: sessionMinutes)
-            }
-            Text(sharingHint)
-                .font(.system(size: 10)).foregroundStyle(.secondary).multilineTextAlignment(.center)
-        }
-        .padding(20).modifier(AfterglowGlass())
-        .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 8)
-        .frame(maxWidth: 560)
-    }
-
-    private var sharingHint: String {
-        if #unavailable(iOS 26.0) { return "Keep \(AppIdentity.name) open while sharing on this iOS version." }
-        return store.sharing ? "iOS may end this session early." : "Choose which profiles receive your music."
-    }
-
-    private var settings: some View {
+    private var settingsPage: some View {
         NavigationStack {
             Form {
-                Section("Make it yours") {
+                Section("Sharing") {
+                    Toggle("Auto-start when opened", isOn: $store.autoStart)
+                    Picker("Session length", selection: $sessionMinutes) {
+                        Text("30 minutes").tag(30)
+                        Text("2 hours").tag(120)
+                        Text("4 hours").tag(240)
+                    }.disabled(background.isRunning)
+                    Picker("Update interval", selection: $pollSeconds) {
+                        Text("5 seconds").tag(5)
+                        Text("15 seconds").tag(15)
+                        Text("30 seconds").tag(30)
+                    }.disabled(background.isRunning)
+                }
+                Section {
+                    Toggle("Background refresh", isOn: $store.backgroundRefresh)
+                    LabeledContent("Last refresh", value: refresh.status)
+                    Text(background.status).font(.footnote).foregroundStyle(.secondary)
+                } header: { Text("Background") } footer: {
+                    Text("iOS schedules short refreshes. This does not keep the app running continuously. Stop sharing cancels them.")
+                }
+                Section("Appearance") {
                     ColorPicker("Accent color", selection: Binding(get: { accent }, set: { accentHex = $0.afterglowHex }), supportsOpacity: false)
-                    HStack(spacing: 18) {
-                        ForEach(["E44950", "B56BDB", "468EE5", "258976"], id: \.self) { color in
-                            Button { accentHex = color } label: {
-                                Circle().fill(Color(afterglowHex: color)).frame(width: 28, height: 28)
-                                    .overlay(Circle().strokeBorder(.primary.opacity(accentHex == color ? 0.8 : 0), lineWidth: 2))
-                            }
-                            .buttonStyle(.plain).accessibilityLabel("Choose accent \(color)")
-                        }
-                    }.padding(.vertical, 5)
                     Picker("Appearance", selection: $appearance) {
-                        Text("System").tag(0); Text("Light").tag(1); Text("Dark").tag(2)
+                        Text("System").tag(0)
+                        Text("Light").tag(1)
+                        Text("Dark").tag(2)
                     }
                 }
-                Section("Sharing session") {
-                    Text(background.status).font(.footnote)
-                    if #unavailable(iOS 26.0) {
-                        Text("On this iOS version, keep \(AppIdentity.name) open while sharing.")
+                Section("Music") {
+                    LabeledContent("Access", value: store.musicAuthorized ? "Allowed" : "Not allowed")
+                    Button("Open iOS settings") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                     }
+                }
+                Section("Artwork diagnostics") {
+                    Button(store.checkingArtwork ? "Checking…" : "Check artwork") {
+                        Task { await store.diagnoseArtwork() }
+                    }.disabled(store.checkingArtwork)
+                    Text(store.artworkDiagnostics).font(.caption).textSelection(.enabled)
+                    Button("Copy diagnostics") { UIPasteboard.general.string = store.artworkDiagnostics }
+                        .disabled(store.artworkDiagnostics == "Not checked")
                 }
                 Section("About") {
                     LabeledContent("App", value: AppIdentity.name)
                     LabeledContent("Discord application", value: String(AppIdentity.applicationID))
                         .font(.caption).textSelection(.enabled)
-                    Text("Built on open-source foundations. Original project and license details are in the repository README.")
-                        .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Your space")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { settingsOpen = false } } }
+            .navigationTitle("Settings")
+        }
+    }
+
+    @ViewBuilder private var errorMessage: some View {
+        if let error = store.error {
+            HStack(alignment: .top) {
+                Text(error).font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
+                Button("Dismiss", systemImage: "xmark") { store.error = nil }.labelStyle(.iconOnly)
+            }
+            .foregroundStyle(.red).padding(16)
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
         }
     }
 

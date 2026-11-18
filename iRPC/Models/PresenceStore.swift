@@ -4,47 +4,131 @@ import Foundation
 import MusicKit
 import MusadoraKit
 import NowPlayingKit
+import UIKit
 
 @MainActor
 final class PresenceStore: ObservableObject {
-    let accounts: [DiscordAccount]
-    @Published private(set) var playback = NowPlayingData(id: "", title: "Your next favorite, on repeat.", artist: "")
+    @Published private(set) var accounts: [DiscordAccount] = []
+    @Published private(set) var playback = NowPlayingData(id: "", title: "Not playing", artist: "")
     @Published private(set) var musicAuthorized = MusicAuthorization.currentStatus == .authorized
     @Published private(set) var playing = false
     @Published private(set) var recentPlayback = false
     @Published private(set) var observedAt = Date()
+    @Published private(set) var currentArtwork: Artwork?
+    @Published private(set) var artworkDiagnostics = "Not checked"
+    @Published private(set) var checkingArtwork = false
+    private var entryArtworkURL: URL?
+    private var songArtworkURL: URL?
+    private var publishing = false
     @Published private(set) var sharing = false
     @Published private(set) var restoring = false
     @Published var error: String?
     private let music = NowPlayingManager.shared
-    private var observations: Set<AnyCancellable> = []
+    private var observations: [Int: AnyCancellable] = [:]
+    private var registry = AccountRegistry()
+    private let registryKey = "discord.\(AppIdentity.applicationID).accounts.v1"
+    private var registryAvailable = true
     private var started = false
     private var readingPlayback = false
     private var loadedHistory = false
     private var hasFreshPlayback = false
-    private var duplicateHandled = false
+    private var duplicateRejections: Set<Int> = []
+    private var autoStartPolicy = AutoStartPolicy()
+    private var lastForegroundPublish = Date.distantPast
+    @Published var autoStart = UserDefaults.standard.bool(forKey: "sharing.autoStart") {
+        didSet {
+            UserDefaults.standard.set(autoStart, forKey: "sharing.autoStart")
+            autoStartPolicy.rearm()
+            tryAutoStart()
+        }
+    }
+    @Published var backgroundRefresh = UserDefaults.standard.bool(forKey: "sharing.backgroundRefresh") {
+        didSet {
+            UserDefaults.standard.set(backgroundRefresh, forKey: "sharing.backgroundRefresh")
+            BackgroundRefreshController.shared.schedule()
+        }
+    }
+    var pollingSeconds: Int {
+        let value = UserDefaults.standard.integer(forKey: "sharing.pollSeconds")
+        return [5, 15, 30].contains(value) ? value : 15
+    }
 
     init() {
         guard AppIdentity.applicationID != 0 else {
-            accounts = []
             error = "This build needs a Discord application ID."
             return
         }
-        accounts = (1...2).map { DiscordAccount(slot: $0, applicationID: AppIdentity.applicationID) }
-        for account in accounts {
-            account.objectWillChange.sink { [weak self, weak account] in
-                Task { @MainActor in
-                    guard let self, let account else { return }
-                    self.objectWillChange.send()
-                    if self.sharing && account.ready && !account.discord.isRunning {
-                        account.discord.isRunning = true
-                    } else if !account.selected && account.discord.isRunning {
-                        account.discord.stopPresenceUpdates()
-                    }
-                    self.rejectDuplicateAccount()
+        do {
+            if let saved = UserDefaults.standard.data(forKey: registryKey) {
+                registry = try AccountRegistry(data: saved)
+                accounts = registry.slots.map { DiscordAccount(slot: $0, applicationID: AppIdentity.applicationID) }
+            } else {
+                // Discover credentials from the former fixed slots once, without
+                // deleting existing stores or creating empty rows on new installs.
+                for slot in 1...2 {
+                    let account = DiscordAccount(slot: slot, applicationID: AppIdentity.applicationID)
+                    let exists: Bool
+                    do { exists = try account.discord.hasStoredToken() }
+                    catch { exists = true } // Retain inaccessible stores for a later unlock/retry.
+                    if exists { accounts.append(account) }
+                    else { account.discord.shutdown() }
                 }
-            }.store(in: &observations)
+                registry = AccountRegistry(legacySlots: accounts.map(\.id))
+                try saveRegistry()
+            }
+            for account in accounts { observe(account) }
+        } catch {
+            registryAvailable = false
+            self.error = "Couldn't read the saved account list. Existing credentials were left unchanged."
         }
+    }
+
+    private func saveRegistry() throws {
+        UserDefaults.standard.set(try registry.data(), forKey: registryKey)
+    }
+
+    private func observe(_ account: DiscordAccount) {
+        observations[account.id] = account.objectWillChange.sink { [weak self, weak account] in
+            Task { @MainActor in
+                guard let self, let account, self.accounts.contains(where: { $0.id == account.id }) else { return }
+                self.objectWillChange.send()
+                if self.sharing && account.ready && !account.discord.isRunning {
+                    account.discord.isRunning = true
+                } else if !account.selected && account.discord.isRunning {
+                    account.discord.stopPresenceUpdates()
+                }
+                self.rejectDuplicateAccounts()
+                self.tryAutoStart()
+            }
+        }
+    }
+
+    @discardableResult
+    func addAccount() -> DiscordAccount? {
+        guard registryAvailable, !authorizing else { return nil }
+        do {
+            let slot = try registry.add()
+            try saveRegistry()
+            let account = DiscordAccount(slot: slot, applicationID: AppIdentity.applicationID)
+            accounts.append(account)
+            observe(account)
+            return account
+        } catch {
+            self.error = "Couldn't add the account."
+            return nil
+        }
+    }
+
+    @discardableResult
+    func removeAccount(_ account: DiscordAccount) -> Bool {
+        guard account.signOut() else { error = account.storageError; return false }
+        account.discord.shutdown()
+        observations.removeValue(forKey: account.id)?.cancel()
+        accounts.removeAll { $0.id == account.id }
+        registry.remove(account.id)
+        do { try saveRegistry() } catch { self.error = "Couldn't save the account list." }
+        if accounts.isEmpty && sharing { stopSharing() }
+        return true
     }
 
     var readyAccounts: [DiscordAccount] { accounts.filter(\.ready) }
@@ -57,18 +141,19 @@ final class PresenceStore: ObservableObject {
         for account in accounts { await account.restore() }
         restoring = false
         await refreshPlayback()
+        tryAutoStart()
     }
 
     func requestMusicAccess() async {
         musicAuthorized = await music.authorize() == .authorized
-        if musicAuthorized { error = nil; await refreshPlayback() }
+        if musicAuthorized { error = nil; await refreshPlayback(); tryAutoStart() }
         else { error = "Allow Music access in Settings to share what you're listening to." }
     }
 
     func connect(_ account: DiscordAccount) {
         guard !authorizing, account.storageError == nil else { return }
         error = nil
-        duplicateHandled = false
+        duplicateRejections.remove(account.id)
         account.discord.authorize()
     }
 
@@ -81,7 +166,22 @@ final class PresenceStore: ObservableObject {
         defer { readingPlayback = false }
         playing = SystemMusicPlayer.shared.state.playbackStatus == .playing
         do {
-            playback = try await music.getCurrentPlayback()
+            let current = try await music.getCurrentPlayback()
+            let entryArtwork = SystemMusicPlayer.shared.queue.currentEntry?.artwork
+            var songArtwork: Artwork?
+            if let item = SystemMusicPlayer.shared.queue.currentEntry?.item {
+                switch item {
+                case .song(let song): songArtwork = song.artwork
+                case .musicVideo(let video): songArtwork = video.artwork
+                @unknown default: break
+                }
+            }
+            currentArtwork = entryArtwork ?? songArtwork
+            entryArtworkURL = entryArtwork?.url(width: 600, height: 600)
+            songArtworkURL = songArtwork?.url(width: 600, height: 600)
+            let resolvedURL = entryArtworkURL ?? songArtworkURL
+            playback = NowPlayingData(id: current.id, title: current.title, artist: current.artist,
+                album: current.album, artworkURL: resolvedURL, playbackTime: current.playbackTime, duration: current.duration)
             hasFreshPlayback = true
             recentPlayback = false
             observedAt = Date()
@@ -94,6 +194,9 @@ final class PresenceStore: ObservableObject {
                     playback = NowPlayingData(id: recent.id.rawValue, title: recent.title, artist: recent.artistName,
                                               album: recent.albumTitle, artworkURL: recent.artwork?.url(width: 600, height: 600),
                                               duration: recent.duration ?? 0)
+                    currentArtwork = recent.artwork
+                    entryArtworkURL = nil
+                    songArtworkURL = recent.artwork?.url(width: 600, height: 600)
                 }
             }
         } catch {
@@ -101,42 +204,166 @@ final class PresenceStore: ObservableObject {
         }
     }
 
+    private func diagnosticURL(_ url: URL?) -> String? {
+        guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        components.query = nil
+        components.fragment = nil
+        components.user = nil
+        components.password = nil
+        return components.string
+    }
+
+    func diagnoseArtwork() async {
+        guard !checkingArtwork else { return }
+        checkingArtwork = true
+        defer { checkingArtwork = false }
+        await refreshPlayback()
+        var lines = [
+            "Track: \(playback.title) — \(playback.artist)",
+            "Music authorization: \(MusicAuthorization.currentStatus)",
+            "Queue-entry artwork URL: \(diagnosticURL(entryArtworkURL) ?? "nil")",
+            "Song artwork URL: \(diagnosticURL(songArtworkURL) ?? "nil")",
+            "Native Artwork object: \(currentArtwork == nil ? "nil" : "present")"
+        ]
+        guard let artwork = currentArtwork else {
+            lines.append("MusicKit did not supply an Artwork object for this entry/song.")
+            artworkDiagnostics = lines.joined(separator: "\n")
+            return
+        }
+        guard let url = artwork.url(width: 600, height: 600) else {
+            lines.append("Artwork.url(width:height:) returned nil. The native renderer is used directly.")
+            artworkDiagnostics = lines.joined(separator: "\n")
+            return
+        }
+        lines.append("Renderer: MusicKit.ArtworkImage")
+        guard ["https", "http"].contains(url.scheme?.lowercased() ?? "") else {
+            lines.append("Native resource scheme: \(url.scheme ?? "nil"). A generic URLSession/AsyncImage path cannot be assumed.")
+            artworkDiagnostics = lines.joined(separator: "\n")
+            return
+        }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 15))
+            if let http = response as? HTTPURLResponse {
+                lines.append("HTTP: \(http.statusCode), type: \(http.mimeType ?? "unknown"), bytes: \(data.count)")
+            }
+            if let image = UIImage(data: data) {
+                lines.append("Image decoded: \(Int(image.size.width))×\(Int(image.size.height))")
+            } else { lines.append("UIImage could not decode the response.") }
+        } catch {
+            lines.append("Image request error: \((error as NSError).domain) \((error as NSError).code)")
+        }
+        artworkDiagnostics = lines.joined(separator: "\n")
+    }
+
     func toggleSharing(minutes: Int) {
+        autoStartPolicy.suppress()
         if sharing { stopSharing(); return }
+        startSharing(minutes: minutes)
+    }
+
+    private func startSharing(minutes: Int) {
         guard musicAuthorized, !readyAccounts.isEmpty else { return }
         error = nil
         sharing = true
+        UserDefaults.standard.set(true, forKey: "sharing.requested")
         for account in readyAccounts { account.discord.isRunning = true }
         if #available(iOS 26.0, *) {
             do {
                 try BackgroundController.shared.start(minutes: minutes, update: poll, onStop: { [weak self] in
-                    self?.finishSharing()
+                    self?.finishSession()
                 })
             } catch {
-                finishSharing()
-                self.error = error.localizedDescription
+                // Auto-start can still publish while open if iOS declines an
+                // immediate continued-processing request. No fake background assertion.
+                self.error = "Background session unavailable. Sharing while the app is open."
             }
-        } else {
-            for account in readyAccounts { account.discord.startPresenceUpdates() }
         }
+        BackgroundRefreshController.shared.schedule()
+        if !BackgroundController.shared.isRunning { Task { try? await poll() } }
     }
 
     func stopSharing() {
-        BackgroundController.shared.stop()
-        finishSharing()
-    }
-
-    private func finishSharing() {
+        autoStartPolicy.suppress()
+        UserDefaults.standard.set(false, forKey: "sharing.requested")
         sharing = false
+        BackgroundRefreshController.shared.cancel()
+        BackgroundController.shared.stop()
         for account in accounts { account.discord.stopPresenceUpdates() }
     }
 
+    private func finishSession() {
+        if backgroundRefresh && UserDefaults.standard.bool(forKey: "sharing.requested") {
+            BackgroundRefreshController.shared.schedule()
+        } else {
+            sharing = false
+            UserDefaults.standard.set(false, forKey: "sharing.requested")
+            for account in accounts { account.discord.stopPresenceUpdates() }
+        }
+    }
+
+    func enteredForeground() {
+        autoStartPolicy.enterForeground()
+        tryAutoStart()
+    }
+
+    func enteredBackground() {
+        autoStartPolicy.leaveForeground()
+        if !BackgroundController.shared.isRunning && !backgroundRefresh && sharing { stopSharing() }
+        BackgroundRefreshController.shared.schedule()
+    }
+
+    private func tryAutoStart() {
+        guard UIApplication.shared.applicationState == .active, !BackgroundController.shared.isRunning,
+              autoStartPolicy.claim(enabled: autoStart, ready: !readyAccounts.isEmpty, authorized: musicAuthorized) else { return }
+        let stored = UserDefaults.standard.integer(forKey: "presence.sessionMinutes")
+        startSharing(minutes: [30, 120, 240].contains(stored) ? stored : 120)
+    }
+
     func tick() async {
+        guard autoStartPolicy.foreground else { return }
         await refreshPlayback()
-        if #unavailable(iOS 26.0), sharing { try? await poll() }
+        tryAutoStart()
+        if sharing, !BackgroundController.shared.isRunning,
+           Date().timeIntervalSince(lastForegroundPublish) >= Double(pollingSeconds) {
+            lastForegroundPublish = Date()
+            try? await poll()
+        }
+    }
+
+    func performBackgroundRefresh() async throws {
+        guard backgroundRefresh, UserDefaults.standard.bool(forKey: "sharing.requested") else { return }
+        guard !BackgroundController.shared.isRunning else { return }
+        await start()
+        try Task.checkCancellation()
+        guard backgroundRefresh, UserDefaults.standard.bool(forKey: "sharing.requested") else { throw CancellationError() }
+        sharing = true
+        // Token restoration is asynchronous inside the SDK. Wait a bounded time
+        // for a selected client; never open an interactive OAuth flow in a refresh.
+        for _ in 0..<40 {
+            try Task.checkCancellation()
+            if !readyAccounts.isEmpty { break }
+            try await Task.sleep(nanoseconds: 250_000_000)
+        }
+        guard !readyAccounts.isEmpty else {
+            throw NSError(domain: AppIdentity.name, code: 2, userInfo: [NSLocalizedDescriptionKey: "No account connected"])
+        }
+        guard backgroundRefresh, UserDefaults.standard.bool(forKey: "sharing.requested") else { throw CancellationError() }
+        for account in readyAccounts { account.discord.isRunning = true }
+        let requested = Date()
+        try await poll()
+        if !playing { return }
+        for _ in 0..<20 {
+            try Task.checkCancellation()
+            if readyAccounts.contains(where: { ($0.discord.lastPresenceAcknowledgedAt ?? .distantPast) >= requested }) { return }
+            try await Task.sleep(nanoseconds: 250_000_000)
+        }
+        throw NSError(domain: AppIdentity.name, code: 3, userInfo: [NSLocalizedDescriptionKey: "No Discord acknowledgement"])
     }
 
     private func poll() async throws {
+        guard !publishing else { return }
+        publishing = true
+        defer { publishing = false }
         try Task.checkCancellation()
         guard sharing else { throw CancellationError() }
         guard MusicAuthorization.currentStatus == .authorized else {
@@ -152,7 +379,7 @@ final class PresenceStore: ObservableObject {
         guard hasFreshPlayback, !playback.id.isEmpty else { return }
         let snapshot = playback
         // Each account owns an SDK client and credentials. One Music sample is
-        // delivered to both; one disconnected account doesn't stop the other.
+        // delivered to every selected client independently.
         await withTaskGroup(of: Void.self) { group in
             for account in readyAccounts {
                 group.addTask { @MainActor in
@@ -167,12 +394,13 @@ final class PresenceStore: ObservableObject {
         }
     }
 
-    private func rejectDuplicateAccount() {
-        guard !duplicateHandled, accounts.count == 2, accounts[0].discord.userId != 0,
-              accounts[0].discord.userId == accounts[1].discord.userId,
-              accounts[1].discord.isAuthenticated else { return }
-        duplicateHandled = true
-        accounts[1].signOut()
-        error = "That Discord account is already connected. Switch to your other account in Discord, then connect Account 2."
+    private func rejectDuplicateAccounts() {
+        var users: Set<UInt64> = []
+        for account in accounts where account.discord.isAuthenticated && account.discord.userId != 0 {
+            guard !users.insert(account.discord.userId).inserted else { continue }
+            guard duplicateRejections.insert(account.id).inserted else { continue }
+            account.signOut()
+            error = "That Discord user is already connected. Switch Discord accounts before connecting another."
+        }
     }
 }

@@ -5,7 +5,7 @@ public struct DiscordCredentialScope {
     public let applicationID: UInt64
     public let slot: Int
     public init(applicationID: UInt64, slot: Int) {
-        precondition(applicationID > 0 && (1...2).contains(slot))
+        precondition(applicationID > 0 && slot > 0)
         self.applicationID = applicationID
         self.slot = slot
     }

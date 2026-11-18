@@ -49,7 +49,7 @@ copied to the Windows checkout's ignored `build/Afterglow-unsigned.ipa`.
 | App icons | Original app icon set | Original PNGs copied byte-for-byte as loose resources; icon plist keys supplied |
 | Discord custom symbol | Original `.symbolset` | Regular-M glyph extracted from the same SVG sheet and rasterized as a template PNG |
 | AccentColor | Empty color entry; platform default | Same platform default |
-| SF Symbols, artwork, avatar images | System symbols / AsyncImage | Same |
+| SF Symbols, artwork, avatar images | System symbols / MusicKit.ArtworkImage / AsyncImage avatars | Same |
 | Token storage | Isolated per-account SwiftData via `TokenStorage` | Isolated per-account Keychain via `TokenStorage`, explicit compile flag |
 | CloudKit | Already explicitly disabled | No cloud sync; device-only Keychain item |
 | SwiftData macros | Original model retained | Entire model/export/consumer paths excluded |
@@ -95,7 +95,7 @@ added. The IPA verifier detects missing expected icon files.
 ## Persistence and migration
 
 The networking implementation has no knowledge of database queries. It calls
-`TokenStorage.load/save/delete`; saving replaces only that account slot’s credentials. Two clients share one SDK callback pump.
+`TokenStorage.load/save/delete`; saving replaces only that account slot’s credentials. All account clients share one SDK callback pump.
 The SwiftData adapter keeps the existing model schema and rolls back failed
 writes. The Keychain adapter updates an existing item atomically or inserts a new
 one, distinguishes a missing item from storage failure, and rejects corrupt data.
@@ -177,4 +177,4 @@ and fresh Discord/Music authorization. The old app's credentials are not copied.
 
 The initial redesigned app was also built from a clean native WSL copy at
 `/home/amr/ios-projects/afterglow-verify`. iOS 26 glass APIs compile through xtool.
-Two-account OAuth/live presence and visual behavior remain device tests.
+Multi-account OAuth/live presence and visual behavior remain device tests.

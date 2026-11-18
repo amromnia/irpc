@@ -5,6 +5,7 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).presence</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).refresh</string>
 	</array>
 	<key>CFBundleIcons</key>
 	<dict>
@@ -45,6 +46,7 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>processing</string>
+		<string>fetch</string>
 	</array>
 </dict>
 </plist>

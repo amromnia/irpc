@@ -73,6 +73,7 @@ struct AccountDetailsView: View {
     let accent: Color
     let authorizing: Bool
     let connect: () -> Void
+    let remove: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var confirmingDisconnect = false
 
@@ -98,26 +99,25 @@ struct AccountDetailsView: View {
                         if let accepted = account.discord.lastPresenceAcknowledgedAt {
                             LabeledContent("Accepted", value: accepted.formatted(date: .omitted, time: .standard))
                         }
-                        Text("Accepted means Discord received the update. Your profile may take a moment to refresh.")
-                            .font(.caption).foregroundStyle(.secondary)
+
                     }
                 }
                 Section {
                     Button(account.discord.isAuthenticated ? "Reconnect" : "Connect Discord", action: connect)
                         .disabled(authorizing || account.storageError != nil)
-                    Button("Disconnect and remove saved credentials", role: .destructive) { confirmingDisconnect = true }
+                    Button("Remove account", role: .destructive) { confirmingDisconnect = true }
                 } footer: {
-                    Text("Adding your other account? Switch accounts in Discord first. If a browser opens, sign into the account you want there. Each account authorizes separately.")
+                    Text("Switch Discord accounts before connecting another account.")
                 }
             }
             .tint(accent)
-            .navigationTitle("Account \(account.id)")
+            .navigationTitle(account.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .confirmationDialog("Disconnect \(account.name)?", isPresented: $confirmingDisconnect, titleVisibility: .visible) {
-                Button("Disconnect account", role: .destructive) { account.signOut() }
+                Button("Remove account", role: .destructive, action: remove)
             } message: {
-                Text("This clears presence and saved credentials for this account only.")
+                Text("Removes this account and its saved credentials.")
             }
         }
     }

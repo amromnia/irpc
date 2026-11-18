@@ -5,7 +5,10 @@ import UIKit
 @MainActor
 final class BackgroundController: ObservableObject {
     static let shared = BackgroundController()
-    static let interval: UInt64 = 15_000_000_000
+    static var interval: UInt64 {
+        let seconds = UserDefaults.standard.integer(forKey: "sharing.pollSeconds")
+        return UInt64([5, 15, 30].contains(seconds) ? seconds : 15) * 1_000_000_000
+    }
 
     @Published private(set) var isRunning = false
     @Published private(set) var status = "Start a sharing session. iOS may stop it early."
@@ -50,7 +53,7 @@ final class BackgroundController: ObservableObject {
         self.onStop = onStop
         let request = BGContinuedProcessingTaskRequest(
             identifier: identifier,
-            title: "Share your soundtrack",
+            title: "Sharing Apple Music",
             subtitle: "\(minutes)-minute listening session"
         )
         request.strategy = .fail
@@ -93,7 +96,8 @@ final class BackgroundController: ObservableObject {
                 self.stop(success: false, message: "iOS ended the session. Tap Start to try again.")
             }
         }
-        let checkCount = Int64(sessionMinutes * 60 / 15)
+        let interval = Self.interval
+        let checkCount = Int64(sessionMinutes * 60) / Int64(interval / 1_000_000_000)
         let minutes = sessionMinutes
         task.progress.totalUnitCount = checkCount
         worker = Task { @MainActor [weak self] in
@@ -103,7 +107,7 @@ final class BackgroundController: ObservableObject {
                     try await update()
                     try Task.checkCancellation()
                     self?.status = "Sharing Apple Music with Discord (up to \(minutes) minutes)."
-                    try await Task.sleep(nanoseconds: Self.interval)
+                    try await Task.sleep(nanoseconds: interval)
                     task.progress.completedUnitCount = step
                 }
                 guard let self, self.activeTask === task else { return }
