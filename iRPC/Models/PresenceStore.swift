@@ -22,6 +22,8 @@ final class PresenceStore: ObservableObject {
     private var songArtworkURL: URL?
     private var publishing = false
     @Published private(set) var controllingPlayback = false
+    private let publicArtworkLookup = PublicArtworkLookup()
+    private var catalogTokenFailure: String?
     private var currentSong: Song?
     private var discordArtworkKey: String?
     private var discordArtworkURL: URL?
@@ -264,29 +266,65 @@ final class PresenceStore: ObservableObject {
         SharingActivityController.shared.update(enabled: liveActivityEnabled && sharing, state: state)
     }
 
-    /// Library artwork is a device resource. Resolve catalog relationships from
-    /// the Song itself; a library ID must not be sent to a catalog-ID endpoint.
+    // A device-local artwork resource can be reused across tracks. Include the
+    // actual metadata rather than assuming that resource or library ID is unique.
+    private var artworkCacheKey: String {
+        [playback.id, playback.title, playback.artist, playback.album ?? "", playback.artworkURL?.absoluteString ?? ""]
+            .joined(separator: "\u{1F}")
+    }
+
+    private var playbackStoreID: String? {
+        guard let item = MPMusicPlayerController.systemMusicPlayer.nowPlayingItem,
+              PublicArtworkLookup.normalized(item.title ?? "") == PublicArtworkLookup.normalized(playback.title),
+              PublicArtworkLookup.normalized(item.artist ?? "") == PublicArtworkLookup.normalized(playback.artist)
+        else { return nil }
+        let value = item.playbackStoreID
+        guard let numeric = UInt64(value), numeric > 0 else { return nil }
+        return value
+    }
+
     private func resolveDiscordArtwork(force: Bool = false) async -> URL? {
-        let key = playback.id + "|" + (playback.artworkURL?.absoluteString ?? "")
+        let key = artworkCacheKey
         if !force, key == discordArtworkKey,
            Date().timeIntervalSince(discordArtworkCheckedAt) < (discordArtworkURL == nil ? 60 : 3600) {
             return discordArtworkURL
         }
+        let song = currentSong
         var resolved = PublicArtworkPolicy.url(playback.artworkURL)
-        var status = resolved == nil ? "No catalog song available for this entry" : "Public MusicKit artwork"
-        if resolved == nil, let song = currentSong {
+        var status = "Public MusicKit artwork"
+        if resolved == nil {
+            do {
+                let result = try await publicArtworkLookup.resolve(.init(title: playback.title, artist: playback.artist,
+                    album: playback.album, duration: playback.duration, storeID: playbackStoreID))
+                resolved = result.url
+                status = result.status
+            } catch is CancellationError { return nil }
+            catch {
+                let failure = error as NSError
+                status = "Public lookup failed: \(failure.domain) \(failure.code)"
+            }
+        }
+        // Configured MusicKit applications may resolve content absent from the
+        // public store. Never require this token-dependent path for public art.
+        if resolved == nil, let song, catalogTokenFailure == nil {
             do {
                 let catalog = try await song.with([.albums], preferredSource: .catalog)
                 resolved = PublicArtworkPolicy.url(catalog.artwork?.url(width: 600, height: 600))
                     ?? catalog.albums?.compactMap { PublicArtworkPolicy.url($0.artwork?.url(width: 600, height: 600)) }.first
-                status = resolved == nil ? "Catalog lookup supplied no public artwork" : "Public catalog artwork"
+                status += resolved == nil ? "; MusicKit supplied no public artwork" : "; MusicKit catalog artwork"
             } catch {
-                let failure = error as NSError
-                status = "Catalog lookup failed: \(failure.domain) \(failure.code)"
+                if let tokenError = error as? MusicTokenRequestError {
+                    status += "; MusicKit token: " + tokenError.rawValue
+                    if tokenError == .developerTokenRequestFailed { catalogTokenFailure = tokenError.rawValue }
+                } else {
+                    let failure = error as NSError
+                    status += "; MusicKit: \(failure.domain) \(failure.code)"
+                }
             }
+        } else if resolved == nil, let catalogTokenFailure {
+            status += "; MusicKit token: " + catalogTokenFailure
         }
-        // Do not replace diagnostics/cache for a song that changed during the lookup.
-        guard key == playback.id + "|" + (playback.artworkURL?.absoluteString ?? "") else { return nil }
+        guard key == artworkCacheKey else { return nil }
         discordArtworkKey = key
         discordArtworkURL = resolved
         discordArtworkStatus = status
@@ -311,6 +349,11 @@ final class PresenceStore: ObservableObject {
         let publicArtwork = await resolveDiscordArtwork(force: true)
         var lines = [
             "Track: \(playback.title) — \(playback.artist)",
+            "Album: \(playback.album ?? "nil")",
+            "Duration: \(playback.duration)",
+            "Music item ID: \(playback.id)",
+            "Playback store ID: \(playbackStoreID ?? "nil")",
+            "App bundle: \(Bundle.main.bundleIdentifier ?? "nil")",
             "Music authorization: \(MusicAuthorization.currentStatus)",
             "Queue-entry artwork URL: \(diagnosticURL(entryArtworkURL) ?? "nil")",
             "Song artwork URL: \(diagnosticURL(songArtworkURL) ?? "nil")",
@@ -503,12 +546,13 @@ final class PresenceStore: ObservableObject {
         }
         guard hasFreshPlayback, !playback.id.isEmpty else { return }
         let trackID = playback.id
+        let artworkKey = artworkCacheKey
         let generation = sharingGeneration
         let entryID = SystemMusicPlayer.shared.queue.currentEntry?.id
         let publicArtwork = await resolveDiscordArtwork()
         await refreshPlayback()
         try Task.checkCancellation()
-        guard sharing, hasFreshPlayback, generation == sharingGeneration, playback.id == trackID,
+        guard sharing, hasFreshPlayback, generation == sharingGeneration, playback.id == trackID, artworkKey == artworkCacheKey,
               entryID == SystemMusicPlayer.shared.queue.currentEntry?.id,
               SystemMusicPlayer.shared.state.playbackStatus == .playing else { return }
         let snapshot = playback

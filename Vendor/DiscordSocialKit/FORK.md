@@ -56,4 +56,6 @@ Presence request buffers are released by their SDK free hook, including cancella
 
 The app now resolves public catalog artwork from MusicKit Song relationships once
 per sampled track. The wrapper no longer makes catalog-ID requests using playback
-IDs. It accepts public HTTPS artwork and retains its existing per-track URL cache.
+IDs. It accepts the supplied public HTTPS artwork. The app owns metadata-based
+resolution/caching; a missing URL no longer reuses an image by an ambiguous
+library ID.

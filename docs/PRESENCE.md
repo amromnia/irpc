@@ -44,19 +44,53 @@ does not prove native rendering or Discord-side downloading succeeded.
 Discord uses a public HTTPS URL separately. The reported `musicKit://artwork/library/…`
 URL is a device-local MusicKit resource, not an image Discord can download. The
 former SDK fallback incorrectly treated a playback/library ID as a catalog ID.
-The app now resolves the actual Song with `.with([.albums], preferredSource: .catalog)`
-and selects public song/album artwork. One cached result is shared by all accounts;
-failed lookups retry after a minute rather than once per account per poll. Library
-IDs are no longer passed to the wrapper's catalog-ID endpoint. This is an exact
-catalog relationship lookup, without a title-search guess or artwork upload.
+The reported catalog call then failed with `MusicKit.MusicTokenRequestError 5`.
+Local Music authorization does not establish that the app can generate an Apple
+Music API developer token. Automatic generation requires the MusicKit App Service
+for the app's actual signed bundle identifier; see
+[Apple's configuration guide](https://developer.apple.com/documentation/musickit/using-automatic-token-generation-for-apple-music-api).
+Changing the signing bundle/team can affect that path. No private key or token
+should be embedded in the client to work around it.
 
-Diagnostics now include the public URL, catalog lookup status/error domain and
-code, and an HTTP/image-decoding probe of that public image. On-device resolution
-and Discord-side rendering still require verification with the updated build.
-Library-only uploads without a catalog match may have no public artwork. Discord
-must fetch the image itself; an in-app success does not establish Discord reachability. Uploading your application
-icon in the Developer Portal configures the app's default icon, including the
-question-mark case where no usable artwork is supplied.
+Version 1.2 uses Apple's token-free public store metadata first:
+
+1. Accept an existing public HTTPS MusicKit artwork URL.
+2. Look up a verified `MPMediaItem.playbackStoreID` using the public lookup API.
+   Library IDs are never treated as store IDs.
+3. If no store ID/result is available, search and require matching title, artist,
+   album (when supplied), and duration within two seconds. Different artwork among
+   otherwise matched results is treated as ambiguous. Live versions and covers
+   must not silently replace the reported song.
+4. A configured native MusicKit catalog can still provide artwork absent from the
+   public store. A developer-token failure is remembered for the process rather
+   than being retried on every track.
+
+This does not upload device artwork or use another developer's credentials. The
+public lookup uses an ephemeral session without cookie/credential storage. It
+uses the US store, spaces requests by 3.1 seconds, and backs off after HTTP 429.
+Public artwork resolution is shared across all Discord accounts and cached for
+the current complete track metadata. Missing results retry after a minute.
+
+The local artwork URI in the reports is identical across different songs, so the
+cache also includes title/artist/album. The SDK wrapper no longer reuses an image
+by library ID when the caller supplied no public artwork. Stale lookup completion
+is checked against the complete sampled track before publication.
+
+A live check for **It's Going Down Now** found public store track `1733408557`,
+matching the provided artists, the Persona 3 Reload soundtrack album, and a
+186.093-second duration. Both exact-ID and verified-search requests returned the
+same artwork, whose URL returned HTTP 200 with `image/jpeg`. Run
+`bash scripts/check-public-artwork.sh --live` to repeat the check. Offline matching
+checks use the captured factual fields in `tests/fixtures/public-artwork-persona.json`.
+See Apple's [lookup](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/LookupExamples.html)
+and [result-field documentation](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/UnderstandingSearchResults.html).
+
+Diagnostics include album/duration, music item/store IDs, actual bundle ID,
+resolution source, public URL, and an HTTP/image-decoding probe. Query strings are
+redacted from copied URLs. Public lookup/image checks are verified locally;
+on-device resolution and Discord-side image rendering still require verification.
+A library-only upload or content absent from the public store may lack public
+artwork. The application's default icon can be set in the Discord Developer Portal.
 
 See [Discord's asset guide](https://discord.com/developers/discord-social-sdk/development-guides/setting-rich-presence)
 for asset keys and externally hosted image URLs. The activity name's C-string

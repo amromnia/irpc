@@ -36,8 +36,6 @@ public final class DiscordManager: ObservableObject {
 	private var tokenStorage: (any TokenStorage)?
     private var acceptsTokenUpdates = true
 
-	// Add artwork cache
-	private var artworkCache: [String: URL] = [:]
     private var timeline = PresenceTimeline()
     private var presenceGeneration = 0
     @Published public private(set) var presenceStatus = "No presence update sent yet."
@@ -474,7 +472,7 @@ public final class DiscordManager: ObservableObject {
         presenceStatus = "Preparing presence update…"
 
         // The system player already supplies artwork, including library-only tracks.
-        let image = PresenceTimeline.artwork(provided: artworkURL, cached: artworkCache[id])
+        let image = PresenceTimeline.artwork(provided: artworkURL, cached: nil)
         guard generation == presenceGeneration, !Task.isCancelled, isAuthenticated, isRunning else { return }
 		var activity = Discord_Activity()
 		Discord_Activity_Init(&activity)
@@ -489,7 +487,6 @@ public final class DiscordManager: ObservableObject {
         var imagePtr: UnsafeMutablePointer<UInt8>?
         var imageTextPtr: UnsafeMutablePointer<UInt8>?
         if let image {
-            artworkCache[id] = image
             let imageBuffer = makeStringBuffer(from: image.absoluteString)
             let textBuffer = makeStringBuffer(from: "\(title) by \(artist)")
             imagePtr = imageBuffer.ptr
@@ -568,7 +565,6 @@ public final class DiscordManager: ObservableObject {
 
 	public func clearPlayback() {
 		currentPlaybackInfo = nil
-		artworkCache.removeAll()  // Clear cache when playback stops
 		clearRichPresence()
 	}
 

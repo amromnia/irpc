@@ -181,7 +181,7 @@ Multi-account OAuth/live presence and visual behavior remain device tests.
 
 ## 1.1: native motion and Live Activity extension
 
-Both application targets embed `AfterglowStatus.appex`. Version/build are 1.1/2
+Both application targets embed `AfterglowStatus.appex`. Version/build are 1.2/3
 for app and extension. The unsigned WSL configuration propagates
 `CODE_SIGNING_ALLOWED = NO` through the generated xcconfig, including the embedded
 extension; ordinary configuration omits that override. The bundle verifier checks
@@ -195,3 +195,12 @@ all styles, evolution/pause, premultiplied alpha, and absence of white highlight
 The UI renderer and native widget extension compile through the extracted iOS
 SDK. Real-device checks remain necessary for visual fidelity, power use, Live
 Activity authorization/lifecycle, and signing/installation.
+
+## 1.2: public artwork lookup
+
+The public artwork resolver uses Foundation networking and does not require a
+MusicKit developer token. It has a fixture-based metadata matching check and an
+optional live endpoint/image check: `bash scripts/check-public-artwork.sh --live`.
+The unsigned app and embedded extension both report version 1.2, build 3. Native
+MusicKit catalog requests remain dependent on the signed bundle's MusicKit App
+Service registration; local playback permission alone does not enable that service.

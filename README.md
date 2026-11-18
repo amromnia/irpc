@@ -110,7 +110,7 @@ artist, countdown, and sharing status on the Lock Screen / Dynamic Island. Tap i
 to reopen the app. It does not extend background execution. Status becomes stale
 after 90 seconds without an update, and respects user dismissal for that session.
 It is a Live Activity, not a Home Screen widget, and needs no App Group or push
-server. About contains only the app version. This release is **1.1, build 2**.
+server. About contains only the app version. This release is **1.2, build 3**.
 
 ## Background behavior and artwork
 
@@ -133,10 +133,15 @@ queue entry and the underlying Song/MusicVideo. The playback dependency previous
 only inspected the queue-entry artwork. Settings → Artwork diagnostics reports
 which source exists, whether the generated URL works over HTTP, and whether the
 image decodes. URL query strings are omitted from copied diagnostics. This change
-identified device-local `musicKit://` artwork in the reported trace. Discord
-requires public artwork: the app resolves catalog relationships from the Song
-object instead of treating library IDs as catalog IDs. Device confirmation is
-still needed for catalog resolution and Discord rendering; see [presence notes](docs/PRESENCE.md).
+identified device-local `musicKit://` artwork in the reported trace. Version 1.2
+resolves public artwork without requiring a MusicKit developer token: it uses the
+playback store ID with Apple's public lookup, or a strictly verified metadata
+search. Title, artist, album (when known), and duration must match; ambiguous
+covers are rejected. The configured MusicKit catalog remains a secondary option.
+
+The reported Persona track was found through both public routes, and its artwork
+returned HTTP 200 in a live regression check. This verifies public resolution;
+Discord-side rendering still needs a device check. See [presence notes](docs/PRESENCE.md).
 
 ## Verification
 
@@ -150,6 +155,9 @@ bash scripts/check-accounts.sh
 bash scripts/check-token-storage.sh
 bash scripts/check-presence.sh
 bash scripts/check-vapor.sh
+bash scripts/check-public-artwork.sh
+# Optional network verification of the reported song:
+bash scripts/check-public-artwork.sh --live
 ```
 
 Live multi-account OAuth, simultaneous Discord presence, long-session runtime, and
