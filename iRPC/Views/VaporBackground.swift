@@ -6,18 +6,19 @@ struct VaporBackground: UIViewRepresentable {
     let color: Color
     let opacity: Double
     let speed: Double
+    let frameRate: Int
     let moving: Bool
 
     func makeUIView(context: Context) -> VaporCanvas { VaporCanvas() }
     func updateUIView(_ view: VaporCanvas, context: Context) {
-        view.configure(style: style, color: UIColor(color), opacity: opacity, speed: speed, moving: moving)
+        view.configure(style: style, color: UIColor(color), opacity: opacity, speed: speed, frameRate: frameRate, moving: moving)
     }
     static func dismantleUIView(_ view: VaporCanvas, coordinator: ()) { view.stop() }
 }
 
 /// Serial ownership keeps the fluid solver and image creation off the UI thread.
 private final class VaporWorker: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "afterglow.vapor", qos: .utility)
+    private let queue = DispatchQueue(label: "afterglow.vapor", qos: .userInitiated)
     private var simulation: VaporSimulation?
     func render(style: String, delta: Float, rgba: SIMD4<Float>, completion: @escaping @Sendable (CGImage?) -> Void) {
         queue.async {
@@ -42,6 +43,15 @@ private final class VaporWorker: @unchecked Sendable {
 }
 
 final class VaporCanvas: UIView {
+    static private(set) var performanceReport = "Not measured"
+    private var reportStart: CFTimeInterval = 0
+    private var reportFrames = 0
+    private var reportWork: CFTimeInterval = 0
+    private var requestedFPS: Float = 60
+    private var targetFPS: Float { ProcessInfo.processInfo.isLowPowerModeEnabled ? min(30, requestedFPS) : requestedFPS }
+    private func configureFrameRate(_ link: CADisplayLink) {
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: targetFPS, preferred: targetFPS)
+    }
     private let worker = VaporWorker()
     private var link: CADisplayLink?
     private var busy = false
@@ -61,7 +71,7 @@ final class VaporCanvas: UIView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
 
-    func configure(style: String, color: UIColor, opacity: Double, speed: Double, moving: Bool) {
+    func configure(style: String, color: UIColor, opacity: Double, speed: Double, frameRate: Int, moving: Bool) {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         color.getRed(&r, green: &g, blue: &b, alpha: &a)
         let rgba = SIMD4<Float>(Float(r), Float(g), Float(b), Float(max(0, min(0.65, opacity))))
@@ -69,8 +79,15 @@ final class VaporCanvas: UIView {
         self.style = style
         self.rgba = rgba
         self.speed = Float(max(0.25, min(1.5, speed)))
+        requestedFPS = frameRate == 30 ? 30 : 60
+        if moving != self.moving {
+            lastTime = 0
+            reportStart = 0
+            reportFrames = 0
+            reportWork = 0
+        }
         self.moving = moving
-        link?.preferredFramesPerSecond = ProcessInfo.processInfo.isLowPowerModeEnabled ? 8 : 24
+        if let link { configureFrameRate(link) }
         link?.isPaused = !moving && !dirty
     }
 
@@ -79,28 +96,42 @@ final class VaporCanvas: UIView {
         if window == nil { stop() }
         else if link == nil {
             let link = CADisplayLink(target: self, selector: #selector(drawFrame(_:)))
-            link.preferredFramesPerSecond = ProcessInfo.processInfo.isLowPowerModeEnabled ? 8 : 24
+            configureFrameRate(link)
             link.add(to: .main, forMode: .common)
             self.link = link
         }
     }
 
-    func stop() { link?.invalidate(); link = nil; lastTime = 0 }
+    func stop() { link?.invalidate(); link = nil; lastTime = 0; reportStart = 0; reportFrames = 0; reportWork = 0 }
 
     @objc private func drawFrame(_ displayLink: CADisplayLink) {
         guard !busy else { return }
         guard moving || dirty else { displayLink.isPaused = true; return }
         busy = true
         dirty = false
-        let elapsed = lastTime == 0 ? 1.0 / 24 : min(0.075, displayLink.timestamp - lastTime)
+        let elapsed = lastTime == 0 ? 1.0 / Double(targetFPS) : min(0.075, displayLink.timestamp - lastTime)
         lastTime = displayLink.timestamp
         let requestedStyle = style
+        let began = CACurrentMediaTime()
         worker.render(style: style, delta: moving ? Float(elapsed) * speed : 0, rgba: rgba) { [weak self] image in
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.busy = false
                 guard self.window != nil, self.style == requestedStyle else { return }
                 self.layer.contents = image
+                let now = CACurrentMediaTime()
+                if self.reportStart == 0 { self.reportStart = now }
+                self.reportFrames += 1
+                self.reportWork += now - began
+                let interval = now - self.reportStart
+                if interval >= 2 {
+                    Self.performanceReport = String(format: "%.0f updates/s; %.1f ms render; target %.0f; Low Power %@",
+                        Double(self.reportFrames) / interval, self.reportWork * 1000 / Double(self.reportFrames),
+                        self.targetFPS, ProcessInfo.processInfo.isLowPowerModeEnabled ? "on" : "off")
+                    self.reportStart = now
+                    self.reportFrames = 0
+                    self.reportWork = 0
+                }
             }
         }
     }

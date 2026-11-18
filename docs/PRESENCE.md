@@ -35,8 +35,7 @@ the Song carries artwork separately. Apple also recommends ArtworkImage over a
 custom AsyncImage path in [this framework discussion](https://developer.apple.com/forums/thread/685311).
 This source inspection does not prove which condition occurred on the user's phone.
 
-While the affected song is playing, use **Settings → Artwork diagnostics → Check
-artwork**. The report distinguishes missing objects, missing generated URLs,
+While the affected song is playing, use **Settings → Diagnostics → Check playback & artwork**. The report distinguishes missing objects, missing generated URLs,
 non-HTTP native resources, HTTP failures, and image-decoding failures. Query strings
 are removed from displayed/copied URLs. A successful diagnostic HTTP request still
 does not prove native rendering or Discord-side downloading succeeded.
@@ -178,3 +177,41 @@ True beat/amplitude analysis is not implemented. The Follow playback preference
 uses the actual Music playback state, without microphone recording or synthetic
 beat claims. Apple excludes FairPlay-protected audio from audio processing taps;
 see [What's new in HLS](https://developer.apple.com/streaming/Whats-new-HLS.pdf).
+
+## 1.3: playback presentation and rendering
+
+Reported sequence: foregrounding while Music plays initializes the button/vapor
+correctly; pausing/resuming from Afterglow then controls playback/sharing while the
+button and vapor remain paused until relaunch. This has not been reproduced on a
+physical device from the Windows workspace. The source had no direct playback
+notification subscription, suppressed the foreground tick during a continued job,
+and reread MusicKit state immediately after issuing commands.
+
+The UI, sharing gate, and vapor now share a presentation state driven by native
+`MPMusicPlayerController` playback notifications (generation explicitly enabled),
+foreground readback, and successful commands. MusicKit's cached status is retained
+only in diagnostics. Successful commands are reflected immediately; up to 1.5
+seconds of delayed, contradictory readback is tolerated, after which actual system
+state takes precedence. The foreground tick runs during continued-processing jobs
+without starting a second presence-publishing loop. Empty-queue metadata sampling
+no longer waits on MusicKit catalog history.
+
+`check-playback-state.sh` exercises 100 pause/resume cycles with delayed snapshots,
+external pauses, permission reset, and bounded recovery. These are policy tests;
+they do not certify Apple's notification delivery on a phone. Repeat the reported
+pause/resume sequence and compare the three playback-state lines in Diagnostics
+if it persists.
+
+The former renderer requested 8 FPS in Low Power Mode and 24 FPS otherwise. Version
+1.3 requests a native 30/60 FPS selection, with a 30 FPS Low Power maximum, using
+CADisplayLink's frame-rate range. The fluid solver eliminates per-cell repeated
+trigonometry, precomputes the static vortex field, and owns bounded reusable numeric
+buffers. Its pointer-based storage was run through the existing one-minute flow
+checks for all styles under Address Sanitizer. A local Release benchmark improved
+median solver/image-data frame time from 2.37/2.66/2.51 ms (Vapor/Vortex/Wisps) to
+0.44/0.40/0.49 ms. This excludes UIKit image submission and isn't phone FPS.
+
+`bash scripts/check-vapor.sh --benchmark` repeats the portable benchmark. Diagnostics
+report the last active layer-update rate, end-to-end worker/render latency, target,
+and Low Power state; paused/background time is excluded. Rendering still stops
+when hidden, backgrounded, disabled, or suppressed by Reduce Motion.

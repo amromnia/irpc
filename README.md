@@ -102,7 +102,8 @@ Follow playback pauses the vapor with Music. It does not analyze beats or audio
 amplitude. Apple Music does not expose the protected playback stream to this app.
 Button rotations, spring presses, and haptics have independent switches. Reduce
 Motion suppresses motion, off-screen/background views stop rendering, and Low
-Power Mode lowers the render cadence. The native fluid solver runs on a serial
+Power Mode limits the selected render cadence to 30 FPS. A native 30/60 FPS
+picker controls the target, with 60 FPS as the default. The native fluid solver runs on a serial
 worker, not the UI thread. Off removes the renderer entirely.
 
 An optional **Live Activity → Show while sharing** displays the current song,
@@ -110,7 +111,7 @@ artist, countdown, and sharing status on the Lock Screen / Dynamic Island. Tap i
 to reopen the app. It does not extend background execution. Status becomes stale
 after 90 seconds without an update, and respects user dismissal for that session.
 It is a Live Activity, not a Home Screen widget, and needs no App Group or push
-server. About contains only the app version. This release is **1.2, build 3**.
+server. About contains only the app version. This release is **1.3, build 4**.
 
 ## Background behavior and artwork
 
@@ -155,6 +156,8 @@ bash scripts/check-accounts.sh
 bash scripts/check-token-storage.sh
 bash scripts/check-presence.sh
 bash scripts/check-vapor.sh
+bash scripts/check-vapor.sh --benchmark
+bash scripts/check-playback-state.sh
 bash scripts/check-public-artwork.sh
 # Optional network verification of the reported song:
 bash scripts/check-public-artwork.sh --live
@@ -179,3 +182,25 @@ Apache License 2.0; see [LICENSE](LICENSE). Forked from
 [itoolio/iRPC](https://github.com/itoolio/iRPC), with original credits to
 [@thehairy](https://github.com/thehairy) and [@castdrian](https://github.com/castdrian).
 Original source headers and the dependency's provenance notes remain in the repository.
+
+## 1.3 playback state and motion performance
+
+Playback UI state now follows native system-player notifications and a foreground
+readback independently of Discord polling or continued-processing tasks. Successful
+play/pause commands update the presentation immediately; contradictory old snapshots
+are ignored briefly, with a bounded 1.5-second reconciliation window. Metadata
+refresh no longer makes a catalog-history request when the Music queue is empty.
+
+The fluid solver reuses owned buffers, precomputes separable force terms, and runs
+on a user-initiated serial worker. A local optimized benchmark measured about
+0.4–0.5 ms per solver/image-data frame, compared with 2.4–2.7 ms before this change.
+These desktop measurements are not an iPhone frame-rate guarantee. Rendering now
+targets the selected 30/60 FPS, with a 30 FPS maximum in Low Power Mode; the previous
+8 FPS limit is removed. Speed remains a separate setting. Reduce Motion, pause,
+Off, backgrounding, and hidden tabs still stop animation.
+
+Settings → Diagnostics → Check playback & artwork includes the current UI,
+MediaPlayer and MusicKit state plus the last active vapor update rate and render
+time. Update counts measure layer submissions rather than compositor presentation.
+Actual iPhone cadence and the reported pause/resume sequence still need device
+verification; no physical-device playback run was available in this workspace.

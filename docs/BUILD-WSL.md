@@ -181,7 +181,7 @@ Multi-account OAuth/live presence and visual behavior remain device tests.
 
 ## 1.1: native motion and Live Activity extension
 
-Both application targets embed `AfterglowStatus.appex`. Version/build are 1.2/3
+Both application targets embed `AfterglowStatus.appex`. Version/build are 1.3/4
 for app and extension. The unsigned WSL configuration propagates
 `CODE_SIGNING_ALLOWED = NO` through the generated xcconfig, including the embedded
 extension; ordinary configuration omits that override. The bundle verifier checks
@@ -204,3 +204,12 @@ optional live endpoint/image check: `bash scripts/check-public-artwork.sh --live
 The unsigned app and embedded extension both report version 1.2, build 3. Native
 MusicKit catalog requests remain dependent on the signed bundle's MusicKit App
 Service registration; local playback permission alone does not enable that service.
+
+## 1.3: state reconciliation and frame budget
+
+The app and status extension report 1.3/4. `check-playback-state.sh` covers the
+portable command/readback reconciliation policy. `check-vapor.sh --benchmark`
+measures optimized solver/image-data work; the existing vapor check also runs with
+`swiftc -O -sanitize=address iRPC/Models/VaporSimulation.swift tests/vapor-check.swift`.
+The app plist enables custom display-link timing hints. Actual playback notification
+delivery, animation frame rate, and power use require device validation.

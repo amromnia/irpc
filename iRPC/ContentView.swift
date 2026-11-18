@@ -14,6 +14,7 @@ struct ContentView: View {
     @AppStorage("appearance.vaporColorSource") private var vaporColorSource = "custom"
     @AppStorage("appearance.vaporColor") private var vaporHex = "971B2B"
     @AppStorage("appearance.vaporOpacity") private var vaporOpacity = 0.4
+    @AppStorage("appearance.vaporFrameRate") private var vaporFrameRate = 60
     @AppStorage("appearance.vaporSpeed") private var vaporSpeed = 1.0 / 1.3
     @AppStorage("appearance.followPlayback") private var followPlayback = true
     @AppStorage("appearance.buttonAnimations") private var buttonAnimations = true
@@ -57,7 +58,8 @@ struct ContentView: View {
             await store.start()
             if scenePhase == .active { store.enteredForeground() }
             while !Task.isCancelled {
-                if !background.isRunning { await store.tick() }
+                store.refreshPlaybackState()
+                await store.tick()
                 do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
             }
         }
@@ -118,7 +120,7 @@ struct ContentView: View {
                     Color(uiColor: .systemGroupedBackground)
                     if ["wisps", "vapor", "vortex"].contains(vaporStyle) {
                         VaporBackground(style: vaporStyle, color: vaporColor, opacity: vaporOpacity,
-                            speed: vaporSpeed, moving: scenePhase == .active && tab == 0 && !reduceMotion && (!followPlayback || store.playing))
+                            speed: vaporSpeed, frameRate: vaporFrameRate, moving: scenePhase == .active && tab == 0 && !reduceMotion && (!followPlayback || store.playing))
                             .allowsHitTesting(false).accessibilityHidden(true)
                     }
                 }.ignoresSafeArea()
@@ -274,6 +276,10 @@ struct ContentView: View {
                             Slider(value: $vaporOpacity, in: 0.1...0.65).accessibilityLabel("Vapor opacity")
                             Text(vaporOpacity, format: .percent.precision(.fractionLength(0))).monospacedDigit().font(.caption).frame(width: 40)
                         }
+                        Picker("Frame rate", selection: $vaporFrameRate) {
+                            Text("30 FPS").tag(30)
+                            Text("60 FPS").tag(60)
+                        }
                         Toggle("Follow playback", isOn: $followPlayback)
                     }
                     Toggle("Button animations", isOn: $buttonAnimations)
@@ -289,8 +295,8 @@ struct ContentView: View {
                         if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                     }
                 }
-                Section("Artwork diagnostics") {
-                    Button(store.checkingArtwork ? "Checking…" : "Check artwork") {
+                Section("Diagnostics") {
+                    Button(store.checkingArtwork ? "Checking…" : "Check playback & artwork") {
                         Task { await store.diagnoseArtwork() }
                     }.disabled(store.checkingArtwork)
                     Text(store.artworkDiagnostics).font(.caption).textSelection(.enabled)

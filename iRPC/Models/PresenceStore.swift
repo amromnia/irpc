@@ -3,7 +3,6 @@ import DiscordSocialKit
 import Foundation
 import MusicKit
 import MediaPlayer
-import MusadoraKit
 import NowPlayingKit
 import UIKit
 
@@ -13,7 +12,6 @@ final class PresenceStore: ObservableObject {
     @Published private(set) var playback = NowPlayingData(id: "", title: "Not playing", artist: "")
     @Published private(set) var musicAuthorized = MusicAuthorization.currentStatus == .authorized
     @Published private(set) var playing = false
-    @Published private(set) var recentPlayback = false
     @Published private(set) var observedAt = Date()
     @Published private(set) var currentArtwork: Artwork?
     @Published private(set) var artworkDiagnostics = "Not checked"
@@ -42,13 +40,16 @@ final class PresenceStore: ObservableObject {
     @Published private(set) var restoring = false
     @Published var error: String?
     private let music = NowPlayingManager.shared
+    private let mediaPlayer = MPMusicPlayerController.systemMusicPlayer
+    private var playbackPresentation = PlaybackPresentationState()
+    private var playbackObservations: Set<AnyCancellable> = []
+    private var playbackNotificationsStarted = false
     private var observations: [Int: AnyCancellable] = [:]
     private var registry = AccountRegistry()
     private let registryKey = "discord.\(AppIdentity.applicationID).accounts.v1"
     private var registryAvailable = true
     private var started = false
     private var readingPlayback = false
-    private var loadedHistory = false
     private var hasFreshPlayback = false
     private var duplicateRejections: Set<Int> = []
     private var autoStartPolicy = AutoStartPolicy()
@@ -176,14 +177,54 @@ final class PresenceStore: ObservableObject {
         account.discord.authorize()
     }
 
+    private func observePlayback() {
+        guard !playbackNotificationsStarted, MusicAuthorization.currentStatus == .authorized else { return }
+        playbackNotificationsStarted = true
+        mediaPlayer.beginGeneratingPlaybackNotifications()
+        NotificationCenter.default.publisher(for: .MPMusicPlayerControllerPlaybackStateDidChange)
+            .merge(with: NotificationCenter.default.publisher(for: .MPMusicPlayerControllerNowPlayingItemDidChange))
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.refreshPlaybackState() }
+            }
+            .store(in: &playbackObservations)
+    }
+
+    func refreshPlaybackState() {
+        let authorized = MusicAuthorization.currentStatus == .authorized
+        if musicAuthorized != authorized { musicAuthorized = authorized }
+        if authorized {
+            observePlayback()
+            let state = mediaPlayer.playbackState
+            playbackPresentation.observe(playing: state == .playing || state == .seekingForward || state == .seekingBackward,
+                                         now: ProcessInfo.processInfo.systemUptime)
+        } else { playbackPresentation.reset() }
+        if playing != playbackPresentation.playing {
+            playing = playbackPresentation.playing
+            updateLiveActivity()
+        }
+    }
+
+    private func playbackCommandAccepted(playing: Bool) {
+        playbackPresentation.commandAccepted(playing: playing, now: ProcessInfo.processInfo.systemUptime)
+        self.playing = playbackPresentation.playing
+        updateLiveActivity()
+    }
+
+    deinit {
+        if playbackNotificationsStarted {
+            Task { @MainActor in MPMusicPlayerController.systemMusicPlayer.endGeneratingPlaybackNotifications() }
+        }
+    }
+
     func refreshPlayback() async {
+        refreshPlaybackState()
         guard !readingPlayback else { return }
         musicAuthorized = MusicAuthorization.currentStatus == .authorized
         guard musicAuthorized else { playing = false; return }
         hasFreshPlayback = false
         readingPlayback = true
         defer { readingPlayback = false; updateLiveActivity() }
-        playing = SystemMusicPlayer.shared.state.playbackStatus == .playing
         do {
             let current = try await music.getCurrentPlayback()
             let entryArtwork = SystemMusicPlayer.shared.queue.currentEntry?.artwork
@@ -203,7 +244,6 @@ final class PresenceStore: ObservableObject {
             playback = NowPlayingData(id: current.id, title: current.title, artist: current.artist,
                 album: current.album, artworkURL: resolvedURL, playbackTime: current.playbackTime, duration: current.duration)
             hasFreshPlayback = true
-            recentPlayback = false
             observedAt = Date()
             if artworkColorTrack != current.id {
                 artworkColorTrack = current.id
@@ -212,19 +252,6 @@ final class PresenceStore: ObservableObject {
             }
         } catch NowPlayingError.noCurrentEntry {
             currentSong = nil
-            if !loadedHistory {
-                loadedHistory = true
-                let songs = try? await MHistory.recentlyPlayedSongs(limit: 1)
-                if let recent = songs?.first {
-                    recentPlayback = true
-                    playback = NowPlayingData(id: recent.id.rawValue, title: recent.title, artist: recent.artistName,
-                                              album: recent.albumTitle, artworkURL: recent.artwork?.url(width: 600, height: 600),
-                                              duration: recent.duration ?? 0)
-                    currentArtwork = recent.artwork
-                    entryArtworkURL = nil
-                    songArtworkURL = recent.artwork?.url(width: 600, height: 600)
-                }
-            }
         } catch {
             self.error = "Couldn't read the current song. Check Music access and try again."
         }
@@ -355,6 +382,10 @@ final class PresenceStore: ObservableObject {
             "Playback store ID: \(playbackStoreID ?? "nil")",
             "App bundle: \(Bundle.main.bundleIdentifier ?? "nil")",
             "Music authorization: \(MusicAuthorization.currentStatus)",
+            "Playback UI: \(playing ? "playing" : "paused")",
+            "MediaPlayer state: \(mediaPlayer.playbackState.rawValue)",
+            "MusicKit state: \(SystemMusicPlayer.shared.state.playbackStatus)",
+            "Vapor last active: \(VaporCanvas.performanceReport)",
             "Queue-entry artwork URL: \(diagnosticURL(entryArtworkURL) ?? "nil")",
             "Song artwork URL: \(diagnosticURL(songArtworkURL) ?? "nil")",
             "Native Artwork object: \(currentArtwork == nil ? "nil" : "present")",
@@ -390,8 +421,10 @@ final class PresenceStore: ObservableObject {
         defer { controllingPlayback = false }
         autoStartPolicy.suppress()
         let player = SystemMusicPlayer.shared
-        if sharing && player.state.playbackStatus == .playing {
+        refreshPlaybackState()
+        if sharing && playing {
             player.pause()
+            playbackCommandAccepted(playing: false)
             stopSharing()
             await refreshPlayback()
             return
@@ -399,8 +432,9 @@ final class PresenceStore: ObservableObject {
         guard musicAuthorized, !readyAccounts.isEmpty else { return }
         let generation = sharingGeneration
         do {
-            if player.state.playbackStatus != .playing { try await player.play() }
+            if !playing { try await player.play() }
             guard generation == sharingGeneration, !Task.isCancelled else { return }
+            playbackCommandAccepted(playing: true)
             await refreshPlayback()
             if !sharing { startSharing(minutes: minutes) }
             else { try await poll() }
@@ -554,7 +588,7 @@ final class PresenceStore: ObservableObject {
         try Task.checkCancellation()
         guard sharing, hasFreshPlayback, generation == sharingGeneration, playback.id == trackID, artworkKey == artworkCacheKey,
               entryID == SystemMusicPlayer.shared.queue.currentEntry?.id,
-              SystemMusicPlayer.shared.state.playbackStatus == .playing else { return }
+              playing else { return }
         let snapshot = playback
         // Each account owns an SDK client and credentials. One Music sample is
         // delivered to every selected client independently.
